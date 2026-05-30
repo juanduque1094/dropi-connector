@@ -9,19 +9,25 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
 
-// Token de sesión Dropi (se obtiene al hacer login)
 let dropiToken = null;
 
 async function loginDropi() {
   try {
-    const response = await axios.post('https://app.dropi.co/api/auth/login', {
+    const response = await axios.post('https://app.dropi.co/api/v1/auth/login', {
       email: process.env.DROPI_EMAIL,
       password: process.env.DROPI_PASSWORD
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
     });
-    dropiToken = response.data.token || response.data.access_token;
+    dropiToken = response.data.token || response.data.access_token || response.data.data?.token;
     console.log('Login Dropi exitoso');
+    return true;
   } catch (error) {
-    console.error('Error login Dropi:', error.message);
+    console.error('Error login Dropi:', error.response?.status, error.response?.data || error.message);
+    return false;
   }
 }
 
@@ -29,46 +35,30 @@ app.post('/api/trenddropi/generate', async (req, res) => {
   const { sources, country } = req.body;
 
   try {
-    // Si no hay token, hacer login primero
     if (!dropiToken) {
-      await loginDropi();
+      const ok = await loginDropi();
+      if (!ok) {
+        return res.status(401).json({ error: 'No se pudo autenticar con Dropi' });
+      }
     }
 
-    // Buscar productos en Dropi
-    const response = await axios.get('https://app.dropi.co/api/products', {
+    const response = await axios.get('https://app.dropi.co/api/v1/products', {
       headers: {
         'Authorization': `Bearer ${dropiToken}`,
-        'Content-Type': 'application/json'
+        'Accept': 'application/json'
       },
-      params: {
-        country: country || 'CO',
-        limit: 20
-      }
+      params: { country: country || 'CO', limit: 20 }
     });
 
-    const products = response.data.data || response.data.products || [];
+    const products = response.data.data || response.data.products || response.data || [];
 
-    res.json({
-      success: true,
-      sources: sources,
-      country: country,
-      products: products,
-      total: products.length
-    });
+    res.json({ success: true, products, total: products.length });
 
   } catch (error) {
-    console.error('Error consultando Dropi:', error.message);
-
-    // Si el token expiró, intentar login de nuevo
-    if (error.response && error.response.status === 401) {
+    if (error.response?.status === 401) {
       dropiToken = null;
-      return res.status(401).json({ error: 'Token expirado, intenta de nuevo' });
     }
-
-    res.status(500).json({ 
-      error: 'Error consultando Dropi',
-      detail: error.message 
-    });
+    res.status(500).json({ error: 'Error consultando Dropi', detail: error.message });
   }
 });
 
