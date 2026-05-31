@@ -4,13 +4,22 @@ const https = require('https');
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 const PORT = process.env.PORT || 3001;
 
-function fetchTrends() {
+function fetchRSS(url) {
   return new Promise((resolve, reject) => {
-    const url = 'https://trends.google.com/trends/trendingsearches/daily/rss?geo=CO';
-    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-CO,es;q=0.9',
+        'Cache-Control': 'no-cache'
+      }
+    };
+    https.get(url, options, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        return fetchRSS(res.headers.location).then(resolve).catch(reject);
+      }
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(data));
@@ -23,11 +32,11 @@ function parseRSS(xml) {
   const regex = /<item>([\s\S]*?)<\/item>/g;
   let match;
   while ((match = regex.exec(xml)) !== null) {
-    const titleMatch = match[1].match(/<title>(.*?)<\/title>/);
+    const titleMatch = match[1].match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || match[1].match(/<title>(.*?)<\/title>/);
     const trafficMatch = match[1].match(/<ht:approx_traffic>(.*?)<\/ht:approx_traffic>/);
     if (titleMatch) {
       items.push({
-        keyword: titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
+        keyword: titleMatch[1].trim(),
         traffic: trafficMatch ? trafficMatch[1] : '1K+'
       });
     }
@@ -37,11 +46,31 @@ function parseRSS(xml) {
 
 app.post('/api/trenddropi/generate', async (req, res) => {
   try {
-    const xml = await fetchTrends();
+    const urls = [
+      'https://trends.google.com/trends/trendingsearches/daily/rss?geo=CO',
+      'https://trends.google.es/trends/trendingsearches/daily/rss?geo=CO'
+    ];
+    
+    let xml = '';
+    let lastError = null;
+    
+    for (const url of urls) {
+      try {
+        xml = await fetchRSS(url);
+        if (xml.includes('<item>')) break;
+      } catch(e) {
+        lastError = e;
+      }
+    }
+
     const trends = parseRSS(xml).slice(0, 12);
 
     if (trends.length === 0) {
-      return res.status(500).json({ error: 'No se encontraron tendencias' });
+      return res.status(500).json({ 
+        error: 'Google Trends no devolvió datos', 
+        detail: lastError?.message || 'Sin items en el RSS',
+        raw_length: xml.length
+      });
     }
 
     const platforms = {
@@ -54,7 +83,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     const products = trends.map((item, index) => ({
       id: index + 1,
       name: item.keyword,
-      trend_score: Math.min(99, 70 + index * 2),
+      trend_score: Math.max(70, 99 - index * 2),
       traffic: item.traffic,
       source: 'Google Trends Colombia',
       search_url: {
@@ -66,6 +95,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     }));
 
     res.json({ success: true, products, total: products.length, source: 'google_trends_rss_co' });
+
   } catch (error) {
     res.status(500).json({ error: 'Error consultando Google Trends', detail: error.message });
   }
