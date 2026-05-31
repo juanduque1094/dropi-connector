@@ -6,6 +6,41 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
+// Palabras clave que indican que NO es un producto vendible
+const NO_PRODUCT_KEYWORDS = [
+  'elecciones','votaciones','registraduria','presidente','congreso','senado','politica',
+  'partido','candidato','gobierno','ministerio','alcalde','gobernador','reforma',
+  'futbol','soccer','champions','mundial','liga','copa','torneo','partido','gol',
+  'psg','arsenal','real madrid','barcelona','atletico','chelsea','manchester','liverpool',
+  'noticias','accidente','muerto','muertos','masacre','ataque','explosión','sismo','terremoto',
+  'fallecio','fallecidos','murio','murió','virus','pandemia','covid','vacuna',
+  'novela','serie','pelicula','actor','cantante','musica','concierto','estreno',
+  'dolar','euro','precio','inflacion','desempleo','economia','pib','impuesto'
+];
+
+// Palabras clave que indican que SÍ puede ser producto vendible
+const PRODUCT_KEYWORDS = [
+  'ropa','camiseta','zapatos','tenis','vestido','pantalon','falda','chaqueta','abrigo',
+  'celular','telefono','audifonos','tablet','laptop','computador','camara','reloj','smartwatch',
+  'hogar','cocina','decoracion','mueble','lampara','sofa','cama','organizador',
+  'belleza','skincare','maquillaje','crema','serum','perfume','shampoo','cabello',
+  'fitness','gym','ejercicio','pesas','yoga','suplemento','proteina','banda',
+  'mascota','perro','gato','acuario','collar','correa','juguete',
+  'bolso','cartera','mochila','maleta','accesorios','joyeria','anillo','collar',
+  'juguete','niños','bebe','infantil','escolar','papeleria'
+];
+
+function isProductTrend(keyword) {
+  const lower = keyword.toLowerCase();
+  // Si contiene palabra de NO producto, descartar
+  if (NO_PRODUCT_KEYWORDS.some(w => lower.includes(w))) return false;
+  // Si contiene palabra de SÍ producto, incluir
+  if (PRODUCT_KEYWORDS.some(w => lower.includes(w))) return true;
+  // Si es corta y genérica, incluir (puede ser marca o producto nuevo)
+  if (lower.split(' ').length <= 2 && lower.length < 20) return true;
+  return false;
+}
+
 function serpFetch(apiKey) {
   return new Promise((resolve, reject) => {
     const url = `https://serpapi.com/search.json?engine=google_trends_trending_now&geo=CO&api_key=${apiKey}`;
@@ -32,9 +67,12 @@ app.post('/api/trenddropi/generate', async (req, res) => {
       return res.status(500).json({ error: 'Sin tendencias', raw: JSON.stringify(data).slice(0, 300) });
     }
 
-    const trends = searches.slice(0, 12).map(item => ({
-      keyword: item.query || item.title || item.name || String(item)
-    }));
+    // Filtrar solo productos vendibles
+    const allTrends = searches.map(item => item.query || item.title || item.name || String(item));
+    const filtered = allTrends.filter(isProductTrend).slice(0, 12);
+    
+    // Si no hay suficientes productos filtrados, usar los primeros disponibles
+    const trends = filtered.length >= 3 ? filtered : allTrends.slice(0, 12);
 
     const platforms = {
       aliexpress: 'https://www.aliexpress.com/wholesale?SearchText=',
@@ -43,16 +81,16 @@ app.post('/api/trenddropi/generate', async (req, res) => {
       alibaba: 'https://www.alibaba.com/trade/search?SearchText='
     };
 
-    const products = trends.map((item, index) => ({
+    const products = trends.map((keyword, index) => ({
       id: index + 1,
-      name: item.keyword,
+      name: keyword,
       trend_score: Math.max(70, 99 - index * 2),
       source: 'Google Trends Colombia',
       search_url: {
-        aliexpress: platforms.aliexpress + encodeURIComponent(item.keyword),
-        temu: platforms.temu + encodeURIComponent(item.keyword),
-        amazon: platforms.amazon + encodeURIComponent(item.keyword),
-        alibaba: platforms.alibaba + encodeURIComponent(item.keyword)
+        aliexpress: platforms.aliexpress + encodeURIComponent(keyword),
+        temu: platforms.temu + encodeURIComponent(keyword),
+        amazon: platforms.amazon + encodeURIComponent(keyword),
+        alibaba: platforms.alibaba + encodeURIComponent(keyword)
       }
     }));
 
