@@ -24,10 +24,12 @@ function aliRequest(method, params, appKey, appSecret) {
     baseParams.sign = sign(appSecret, baseParams);
     const query = Object.keys(baseParams).map(k => `${k}=${encodeURIComponent(baseParams[k])}`).join('&');
     const url = `https://api-sg.aliexpress.com/sync?${query}`;
+    console.log('🔍 AliExpress URL:', url);
     https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        console.log('📦 AliExpress RAW response:', data);
         try { resolve(JSON.parse(data)); }
         catch(e) { reject(e); }
       });
@@ -63,6 +65,8 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
 
+    console.log('🔑 APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
+
     let products = [];
 
     if (appKey && appSecret) {
@@ -81,7 +85,10 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           tracking_id: 'default'
         }, appKey, appSecret);
 
+        console.log('✅ AliExpress parsed response:', JSON.stringify(data).substring(0, 500));
+
         const items = data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
+        console.log('📋 Items found:', items.length);
 
         if (items.length > 0) {
           products = items.map((item, index) => ({
@@ -98,11 +105,14 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           }));
         }
       } catch(e) {
-        console.log('AliExpress API error:', e.message);
+        console.log('❌ AliExpress API error:', e.message);
       }
+    } else {
+      console.log('⚠️ Variables de entorno no encontradas, usando fallback');
     }
 
     if (!products.length) {
+      console.log('🔄 Usando lista fallback');
       const shuffled = [...FALLBACK_PRODUCTS].sort(() => Math.random() - 0.5).slice(0, 12);
       products = shuffled.map((item, index) => ({
         id: index + 1,
@@ -119,6 +129,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     res.json({ success: true, products, total: products.length, source: products[0]?.source });
 
   } catch (error) {
+    console.log('💥 Error general:', error.message);
     res.status(500).json({ error: 'Error', detail: error.message });
   }
 });
