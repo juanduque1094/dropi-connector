@@ -8,8 +8,10 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 function sign(appSecret, params) {
+  // Formato correcto para AliExpress: secret + sorted_params + secret
   const sorted = Object.keys(params).sort().map(k => `${k}${params[k]}`).join('');
-  return crypto.createHmac('sha256', appSecret).update(appSecret + sorted + appSecret).digest('hex').toUpperCase();
+  const str = appSecret + sorted + appSecret;
+  return crypto.createHmac('sha256', appSecret).update(str).digest('hex').toUpperCase();
 }
 
 function aliRequest(method, params, appKey, appSecret) {
@@ -19,17 +21,18 @@ function aliRequest(method, params, appKey, appSecret) {
       method: method,
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       sign_method: 'hmac-sha256',
+      v: '2.0',
       ...params
     };
     baseParams.sign = sign(appSecret, baseParams);
-    const query = Object.keys(baseParams).map(k => `${k}=${encodeURIComponent(baseParams[k])}`).join('&');
+    const query = Object.keys(baseParams).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`).join('&');
     const url = `https://api-sg.aliexpress.com/sync?${query}`;
     console.log('🔍 AliExpress URL:', url);
     https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        console.log('📦 AliExpress RAW response:', data);
+        console.log('📦 AliExpress RAW response:', data.substring(0, 300));
         try { resolve(JSON.parse(data)); }
         catch(e) { reject(e); }
       });
@@ -72,20 +75,19 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     if (appKey && appSecret) {
       try {
         const data = await aliRequest('aliexpress.affiliate.hotproduct.query', {
-          app_signature: '',
           category_ids: '',
           country: 'CO',
           fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
-          keywords: 'trending',
+          keywords: 'fashion',
           page_no: '1',
           page_size: '12',
-          sort: 'SALE_PRICE_ASC',
+          sort: 'LAST_VOLUME_DESC',
           target_currency: 'USD',
           target_language: 'ES',
           tracking_id: 'default'
         }, appKey, appSecret);
 
-        console.log('✅ AliExpress parsed response:', JSON.stringify(data).substring(0, 500));
+        console.log('✅ AliExpress parsed response:', JSON.stringify(data).substring(0, 400));
 
         const items = data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
         console.log('📋 Items found:', items.length);
@@ -108,7 +110,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('❌ AliExpress API error:', e.message);
       }
     } else {
-      console.log('⚠️ Variables de entorno no encontradas, usando fallback');
+      console.log('⚠️ Variables no encontradas, usando fallback');
     }
 
     if (!products.length) {
