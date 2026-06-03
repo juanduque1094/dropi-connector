@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const https = require('https');
-const http = require('http');
 const crypto = require('crypto');
 const app = express();
 app.use(cors());
@@ -11,7 +10,7 @@ const PORT = process.env.PORT || 3001;
 function sign(appSecret, params) {
   const sorted = Object.keys(params).sort().map(k => `${k}${params[k]}`).join('');
   const str = appSecret + sorted + appSecret;
-  return crypto.createHash('md5').update(str, 'utf8').digest('hex').toUpperCase();
+  return crypto.createHmac('sha256', appSecret).update(str).digest('hex').toUpperCase();
 }
 
 function getTimestamp() {
@@ -31,7 +30,7 @@ function aliRequest(method, params, appKey, appSecret) {
       app_key: appKey,
       format: 'json',
       method: method,
-      sign_method: 'md5',
+      sign_method: 'hmac-sha256',
       timestamp: getTimestamp(),
       v: '2.0',
       ...params
