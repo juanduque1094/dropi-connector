@@ -23,15 +23,15 @@ function sign(appSecret, params) {
     .toUpperCase();
 }
 
-// ✅ Timestamp en formato requerido por AliExpress: "YYYY-MM-DD HH:mm:ss"
+// ✅ Timestamp en formato UTC requerido por AliExpress: "YYYY-MM-DD HH:mm:ss"
 function getTimestamp() {
   const now = new Date();
-  const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const h = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  const s = String(now.getSeconds()).padStart(2, '0');
+  const y = now.getUTCFullYear();
+  const mo = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  const h = String(now.getUTCHours()).padStart(2, '0');
+  const mi = String(now.getUTCMinutes()).padStart(2, '0');
+  const s = String(now.getUTCSeconds()).padStart(2, '0');
   return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
 }
 
