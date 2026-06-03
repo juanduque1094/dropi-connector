@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const https = require('https');
+const http = require('http');
 const crypto = require('crypto');
 const app = express();
 app.use(cors());
@@ -8,35 +9,59 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 function sign(appSecret, params) {
-  // Formato correcto para AliExpress: secret + sorted_params + secret
   const sorted = Object.keys(params).sort().map(k => `${k}${params[k]}`).join('');
   const str = appSecret + sorted + appSecret;
-  return crypto.createHmac('sha256', appSecret).update(str).digest('hex').toUpperCase();
+  return crypto.createHash('md5').update(str, 'utf8').digest('hex').toUpperCase();
+}
+
+function getTimestamp() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const h = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
 }
 
 function aliRequest(method, params, appKey, appSecret) {
   return new Promise((resolve, reject) => {
     const baseParams = {
       app_key: appKey,
+      format: 'json',
       method: method,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      sign_method: 'hmac-sha256',
+      sign_method: 'md5',
+      timestamp: getTimestamp(),
       v: '2.0',
       ...params
     };
     baseParams.sign = sign(appSecret, baseParams);
-    const query = Object.keys(baseParams).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`).join('&');
-    const url = `https://api-sg.aliexpress.com/sync?${query}`;
-    console.log('🔍 AliExpress URL:', url);
-    https.get(url, (res) => {
+    const body = Object.keys(baseParams).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`).join('&');
+    console.log('🔍 Request body:', body.substring(0, 200));
+
+    const options = {
+      hostname: 'gw.api.taobao.com',
+      path: '/router/rest',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    const req = http.request(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        console.log('📦 AliExpress RAW response:', data.substring(0, 300));
+        console.log('📦 AliExpress RAW response:', data.substring(0, 400));
         try { resolve(JSON.parse(data)); }
         catch(e) { reject(e); }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
   });
 }
 
@@ -67,7 +92,6 @@ app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-
     console.log('🔑 APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
 
     let products = [];
@@ -75,7 +99,6 @@ app.post('/api/trenddropi/generate', async (req, res) => {
     if (appKey && appSecret) {
       try {
         const data = await aliRequest('aliexpress.affiliate.hotproduct.query', {
-          category_ids: '',
           country: 'CO',
           fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
           keywords: 'fashion',
@@ -87,8 +110,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           tracking_id: 'default'
         }, appKey, appSecret);
 
-        console.log('✅ AliExpress parsed response:', JSON.stringify(data).substring(0, 400));
-
+        console.log('✅ Parsed:', JSON.stringify(data).substring(0, 400));
         const items = data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
         console.log('📋 Items found:', items.length);
 
@@ -110,7 +132,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('❌ AliExpress API error:', e.message);
       }
     } else {
-      console.log('⚠️ Variables no encontradas, usando fallback');
+      console.log('⚠️ Variables no encontradas');
     }
 
     if (!products.length) {
