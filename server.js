@@ -41,8 +41,8 @@ function aliRequest(method, params, appKey, appSecret) {
     console.log('🔍 Request body:', body.substring(0, 200));
 
     const options = {
-      hostname: 'gw.api.taobao.com',
-      path: '/router/rest',
+      hostname: 'api-sg.aliexpress.com',
+      path: '/sync',
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
@@ -50,7 +50,7 @@ function aliRequest(method, params, appKey, appSecret) {
       }
     };
 
-    const req = http.request(options, (res) => {
+    const req = https.request(options, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
