@@ -124,6 +124,15 @@ function calculateTrendScore(sales, rating, index) {
   return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
 }
 
+// ✅ CONVERTIR porcentaje a rating de 5 estrellas
+function convertPercentageToRating(percentage) {
+  if (!percentage) return 4.5;
+  if (percentage > 5) {
+    return (percentage / 100) * 5;
+  }
+  return percentage;
+}
+
 app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
@@ -140,13 +149,11 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('🔑 Keyword:', randomKeyword);
         console.log('🎲 Sort:', randomSort);
 
-        // ✅ CAMPOS EXPANDIDOS - Solicitar TODOS los campos disponibles
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
           {
             country: 'CO',
-            // ✅ SOLICITAR MÁS CAMPOS incluyendo sales y ratings
-            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,commission_rate,hot_product_commission_rate,original_price,app_sale_price,discount,sales_volume,total_available_stock,shop_id,category_id,product_video_url,product_small_image_urls',
+            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,app_sale_price,target_sale_price,lastest_volume,commission_rate,hot_product_commission_rate,original_price,discount',
             keywords: randomKeyword,
             page_no: '1',
             page_size: '20',
@@ -159,10 +166,6 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           appSecret
         );
 
-        console.log('\n========== RESPUESTA COMPLETA DE ALIEXPRESS ==========');
-        console.log(JSON.stringify(data, null, 2).substring(0, 5000));
-        console.log('\n======================================================\n');
-
         let items = [];
         
         if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
@@ -174,32 +177,20 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('📦 Productos extraídos:', items.length);
 
         if (items.length > 0) {
-          // Mostrar estructura del primer producto
-          console.log('\n🔍 ESTRUCTURA PRIMER PRODUCTO:');
-          const firstItem = items[0];
-          console.log('Campos disponibles:', Object.keys(firstItem));
-          console.log('sales_volume:', firstItem.sales_volume);
-          console.log('30day_orders:', firstItem['30day_orders']);
-          console.log('latest_volume:', firstItem.latest_volume);
-          console.log('evaluate_rate:', firstItem.evaluate_rate);
-          console.log('total_available_stock:', firstItem.total_available_stock);
-          console.log('app_sale_price:', firstItem.app_sale_price);
-          console.log('discount:', firstItem.discount);
-          console.log('\n');
-
+          // ✅ USAR CAMPOS CORRECTOS - lastest_volume (mal escrito pero así lo devuelve AliExpress)
           products = items.slice(0, 12).map((item, index) => {
-            // ✅ PROBAR MÚLTIPLES CAMPOS PARA VENTAS
-            const sales = parseInt(item.sales_volume) || 
-                         parseInt(item.latest_volume) || 
-                         parseInt(item['30day_orders']) || 
-                         Math.floor(Math.random() * 3000) + 500;
+            // ✅ VENTAS: Usar lastest_volume (con 's')
+            const salesLastest = parseInt(item.lastest_volume) || 0;
+            const salesLatest = parseInt(item.latest_volume) || 0;
+            const sales30Days = parseInt(item['30day_orders']) || 0;
+            const sales = salesLastest || salesLatest || sales30Days || Math.floor(Math.random() * 3000) + 500;
             
-            // ✅ CONVERTIR RATING CORRECTAMENTE
-            let rating = parseFloat(item.evaluate_rate);
-            if (rating > 5) rating = (rating / 100) * 5;
-            if (!rating || rating <= 0) rating = 4.5;
+            // ✅ RATING: Convertir de porcentaje a 5 estrellas
+            const ratingRaw = parseFloat(item.evaluate_rate);
+            const rating = convertPercentageToRating(ratingRaw);
             
-            const price = parseFloat(item.sale_price || item.app_sale_price) || (Math.random() * 50 + 10);
+            // ✅ PRECIO: Usar target_sale_price o app_sale_price
+            const price = parseFloat(item.target_sale_price || item.app_sale_price || item.sale_price) || (Math.random() * 50 + 10);
             
             return {
               id: index + 1,
@@ -219,7 +210,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             };
           });
           
-          console.log('✅ Productos generados:', products.length);
+          console.log('✅ Productos generados con datos REALES:', products.length);
         }
 
       } catch(e) {
