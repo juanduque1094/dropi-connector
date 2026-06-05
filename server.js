@@ -7,25 +7,27 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
-// ✅ Firma corregida según documentación oficial AliExpress 2024-2026
+// ✅ Firma según documentación oficial AliExpress 2026
 function sign(appSecret, params) {
-  // 1. Ordenar parámetros alfabéticamente por clave (excluir 'sign')
-  const sortedKeys = Object.keys(params).filter(k => k !== 'sign').sort();
+  // 1. Filtrar y ordenar parámetros alfabéticamente (excluir 'sign' y valores vacíos)
+  const sortedKeys = Object.keys(params)
+    .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
+    .sort();
   
-  // 2. Concatenar en formato key=value&key=value (CON separadores)
-  const concatenated = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  // 2. Construir string en formato: key1value1key2value2... (SIN separadores)
+  const strToSign = sortedKeys.map(k => `${k}${params[k]}`).join('');
   
-  // 3. Aplicar HMAC-SHA256 con appSecret como clave
+  // 3. Aplicar HMAC-SHA256 con appSecret al inicio y al final
   const signature = crypto
     .createHmac('sha256', appSecret)
-    .update(concatenated, 'utf8')
+    .update(appSecret + strToSign + appSecret, 'utf8')
     .digest('hex')
     .toUpperCase();
   
   return signature;
 }
 
-// ✅ Timestamp en formato UTC requerido por AliExpress: "YYYY-MM-DD HH:mm:ss"
+// ✅ Timestamp en formato UTC: "YYYY-MM-DD HH:mm:ss"
 function getTimestamp() {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -39,7 +41,7 @@ function getTimestamp() {
 
 function aliRequest(method, params, appKey, appSecret) {
   return new Promise((resolve, reject) => {
-    // Construir parámetros base SIN la firma primero
+    // Parámetros base
     const baseParams = {
       app_key: appKey,
       format: 'json',
@@ -50,18 +52,19 @@ function aliRequest(method, params, appKey, appSecret) {
       ...params
     };
 
-    // Generar firma con todos los parámetros (excepto sign mismo)
+    // Generar firma
     baseParams.sign = sign(appSecret, baseParams);
 
-    // Construir body URL-encoded
-    const body = Object.keys(baseParams)
+    // Construir body URL-encoded ORDENADO
+    const sortedKeys = Object.keys(baseParams).sort();
+    const body = sortedKeys
       .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`)
       .join('&');
 
     console.log('🔍 Método:', method);
     console.log('🔍 Timestamp:', baseParams.timestamp);
     console.log(' Sign generado:', baseParams.sign);
-    console.log('🔍 Body (primeros 300 chars):', body.substring(0, 300));
+    console.log('🔍 Body completo:', body);
 
     const options = {
       hostname: 'api-sg.aliexpress.com',
@@ -77,7 +80,7 @@ function aliRequest(method, params, appKey, appSecret) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        console.log('📦 AliExpress RAW response (primeros 500 chars):', data.substring(0, 500));
+        console.log('📦 AliExpress RAW response:', data.substring(0, 800));
         try {
           resolve(JSON.parse(data));
         } catch(e) {
@@ -85,13 +88,18 @@ function aliRequest(method, params, appKey, appSecret) {
         }
       });
     });
-    req.on('error', reject);
+    
+    req.on('error', (e) => {
+      console.error('❌ Error en request:', e.message);
+      reject(e);
+    });
+    
     req.write(body);
     req.end();
   });
 }
 
-// Fallback por si AliExpress falla
+// Fallback
 const FALLBACK_PRODUCTS = [
   { keyword: 'audifonos bluetooth inalambricos', traffic: '100K+' },
   { keyword: 'smartwatch deportivo mujer', traffic: '80K+' },
@@ -134,10 +142,15 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           appSecret
         );
 
-        console.log('✅ Respuesta parseada:', JSON.stringify(data).substring(0, 500));
+        console.log('✅ Respuesta completa:', JSON.stringify(data, null, 2).substring(0, 1000));
 
-        const items =
-          data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
+        // Extraer productos (puede estar en diferentes niveles)
+        let items = [];
+        if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
+          items = data.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
+        } else if (data?.aliexpress_affiliate_hotproduct_query_response?.products?.product) {
+          items = data.aliexpress_affiliate_hotproduct_query_response.products.product;
+        }
 
         console.log('📋 Productos encontrados:', items.length);
 
@@ -161,9 +174,10 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
       } catch(e) {
         console.log('❌ Error llamando AliExpress API:', e.message);
+        console.error(e);
       }
     } else {
-      console.log('️ Variables de entorno no encontradas. Usando fallback.');
+      console.log('⚠️ Variables de entorno no encontradas. Usando fallback.');
     }
 
     // Si no hay productos reales, usar fallback
