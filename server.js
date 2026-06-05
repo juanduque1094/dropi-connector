@@ -89,16 +89,20 @@ const KEYWORDS = [
   'makeup tools', 'skin care', 'hair accessories', 'nail art'
 ];
 
+// ✅ PRIORIZAR PRODUCTOS MÁS VENDIDOS
 const SORTS = [
+  'LAST_VOLUME_DESC',      // ✅ MÁS vendidos - PRIORIDAD ALTA
   'LAST_VOLUME_DESC',
-  'EVALUATE_SCORE_DESC',
-  'SALE_PRICE_ASC'
+  'LAST_VOLUME_DESC',
+  'LAST_VOLUME_DESC',
+  'LAST_VOLUME_DESC',
+  'EVALUATE_SCORE_DESC',   // Mejor calificados
+  'SALE_PRICE_ASC'         // Precio ascendente (menos prioridad)
 ];
 
-// ✅ PALABRAS CLAVE POR CATEGORÍA para filtrar productos
 const CATEGORY_KEYWORDS_FILTER = {
   'baby products': {
-    required: ['baby', 'bebé', 'infantil', 'lactante', 'dentición', 'mordedor', 'pañal', 'cuna', 'cochecito', 'biberón', 'chupete', 'nanas', 'recién nacido'],
+    required: ['baby', 'bebé', 'infantil', 'lactante', 'dentición', 'mordedor', 'pañal', 'cuna', 'cochecito', 'biberón', 'chupete'],
     excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'raspberry', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll']
   },
   'toys kids': {
@@ -140,6 +144,10 @@ const CATEGORY_KEYWORDS_FILTER = {
   'phone accessories': {
     required: ['phone', 'mobile', 'celular', 'smartphone', 'case', 'cover', 'charger'],
     excluded: ['baby', 'pet', 'toy', 'home', 'kitchen']
+  },
+  'shoes women': {
+    required: ['shoes', 'shoe', 'zapatos', 'zapato', 'sneakers', 'heels', 'boots', 'sandals', 'footwear'],
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'kitchen']
   }
 };
 
@@ -180,18 +188,15 @@ function convertPercentageToRating(percentage) {
   return percentage;
 }
 
-// ✅ FUNCIÓN DE FILTRADO INTELIGENTE
 function isProductRelevant(productTitle, category) {
   const title = productTitle.toLowerCase();
   
-  // Si no hay filtros definidos para esta categoría, aceptar el producto
   if (!CATEGORY_KEYWORDS_FILTER[category]) {
     return true;
   }
   
   const filters = CATEGORY_KEYWORDS_FILTER[category];
   
-  // Verificar palabras EXCLUIDAS (si aparece alguna, rechazar)
   if (filters.excluded) {
     for (const excludedWord of filters.excluded) {
       if (title.includes(excludedWord.toLowerCase())) {
@@ -201,7 +206,6 @@ function isProductRelevant(productTitle, category) {
     }
   }
   
-  // Verificar palabras REQUERIDAS (al menos una debe aparecer)
   if (filters.required) {
     let hasRequiredWord = false;
     for (const requiredWord of filters.required) {
@@ -241,10 +245,11 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           console.log('🎲 Usando categoría aleatoria:', randomKeyword);
         }
         
+        // ✅ PRIORIZAR LAST_VOLUME_DESC para productos más vendidos
         const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
         
         console.log('🔑 Keyword:', randomKeyword);
-        console.log('🎲 Sort:', randomSort);
+        console.log('🎲 Sort:', randomSort, '(MÁS VENDIDOS)');
 
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
@@ -253,7 +258,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,app_sale_price,target_sale_price,lastest_volume,commission_rate,hot_product_commission_rate,original_price,discount',
             keywords: randomKeyword,
             page_no: '1',
-            page_size: '40',  // Pedimos más para tener margen de filtrado
+            page_size: '40',
             sort: randomSort,
             target_currency: 'USD',
             target_language: 'ES',
@@ -274,7 +279,6 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('📦 Productos brutos extraídos:', items.length);
 
         if (items.length > 0) {
-          // ✅ FILTRAR productos por relevancia de categoría
           const filteredItems = items.filter(item => {
             return isProductRelevant(item.product_title, randomKeyword);
           });
@@ -310,7 +314,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             };
           });
           
-          console.log('✅ Productos finales generados:', products.length);
+          console.log('✅ Productos finales generados (MÁS VENDIDOS):', products.length);
         }
 
       } catch(e) {
