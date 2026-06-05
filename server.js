@@ -124,7 +124,6 @@ function calculateTrendScore(sales, rating, index) {
   return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
 }
 
-// ✅ CONVERTIR porcentaje a rating de 5 estrellas
 function convertPercentageToRating(percentage) {
   if (!percentage) return 4.5;
   if (percentage > 5) {
@@ -133,17 +132,32 @@ function convertPercentageToRating(percentage) {
   return percentage;
 }
 
+// ✅ SOLO CAMBIÉ ESTO - Recibir categoría del frontend
 app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    console.log('🔑 APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
+    
+    // ✅ NUEVO: Recibir categoría del frontend
+    const { category } = req.body;
+    console.log('📂 Categoría del frontend:', category);
 
     let products = [];
 
     if (appKey && appSecret) {
       try {
-        const randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
+        // ✅ MODIFICADO: Usar categoría del frontend o aleatoria
+        let randomKeyword;
+        if (category && category !== 'all') {
+          // Si viene categoría específica del frontend, usarla
+          randomKeyword = category;
+          console.log('🎯 Usando categoría específica:', randomKeyword);
+        } else {
+          // Si no, usar aleatorio como antes
+          randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
+          console.log('🎲 Usando categoría aleatoria:', randomKeyword);
+        }
+        
         const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
         
         console.log('🔑 Keyword:', randomKeyword);
@@ -177,7 +191,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('📦 Productos extraídos:', items.length);
 
         if (items.length > 0) {
-          // ✅ USAR CAMPOS CORRECTOS - lastest_volume (mal escrito pero así lo devuelve AliExpress)
+          // ✅ USAR CAMPOS CORRECTOS - lastest_volume (con 's')
           products = items.slice(0, 12).map((item, index) => {
             // ✅ VENTAS: Usar lastest_volume (con 's')
             const salesLastest = parseInt(item.lastest_volume) || 0;
@@ -231,7 +245,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         rating: item.rating.toFixed(1),
         price: item.price.toFixed(2),
         source: 'Google Trends Colombia (fallback)',
-        category: 'general',
+        category: category || 'general',
         search_url: {
           aliexpress: `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.keyword)}`
         }
