@@ -89,65 +89,47 @@ const KEYWORDS = [
   'makeup tools', 'skin care', 'hair accessories', 'nail art'
 ];
 
-// ✅ PRIORIZAR PRODUCTOS MÁS VENDIDOS
 const SORTS = [
-  'LAST_VOLUME_DESC',      // ✅ MÁS vendidos - PRIORIDAD ALTA
-  'LAST_VOLUME_DESC',
-  'LAST_VOLUME_DESC',
-  'LAST_VOLUME_DESC',
-  'LAST_VOLUME_DESC',
-  'EVALUATE_SCORE_DESC',   // Mejor calificados
-  'SALE_PRICE_ASC'         // Precio ascendente (menos prioridad)
+  'LAST_VOLUME_DESC'  // ✅ SIEMPRE más vendidos
 ];
 
+// ✅ FILTROS MÁS RELAJADOS - Solo palabras excluidas (sin requeridas)
 const CATEGORY_KEYWORDS_FILTER = {
   'baby products': {
-    required: ['baby', 'bebé', 'infantil', 'lactante', 'dentición', 'mordedor', 'pañal', 'cuna', 'cochecito', 'biberón', 'chupete'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'raspberry', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'raspberry', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll', 'phone', 'charger', 'usb', 'bluetooth']
   },
   'toys kids': {
-    required: ['toy', 'juguete', 'game', 'play', 'niño', 'divertido', 'educational', 'learning'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'adult', 'baby', 'infant']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'adult', 'baby', 'infant', 'phone', 'charger']
   },
   'pet supplies': {
-    required: ['pet', 'dog', 'cat', 'mascota', 'perro', 'gato', 'animal', 'veterinary'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'human', 'adult']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'human', 'adult', 'phone', 'charger']
   },
   'home decor': {
-    required: ['home', 'decor', 'decoration', 'hogar', 'decoración', 'wall', 'room', 'furniture'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone']
   },
   'kitchen gadgets': {
-    required: ['kitchen', 'cocina', 'cooking', 'utensil', 'food', 'comida', 'chef'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'phone', 'toy']
   },
   'beauty tools': {
-    required: ['beauty', 'makeup', 'cosmetic', 'belleza', 'maquillaje', 'nail', 'hair', 'skin'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone']
   },
   'fashion accessories': {
-    required: ['fashion', 'accessory', 'moda', 'accesorio', 'jewelry', 'bag', 'watch', 'clothing'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone']
   },
   'electronics gadgets': {
-    required: ['electronic', 'gadget', 'tech', 'digital', 'smart', 'phone', 'computer'],
-    excluded: ['baby', 'pet', 'toy', 'home decor']
+    excluded: ['baby', 'pet', 'toy', 'home decor', 'kitchen', 'fashion']
   },
   'fitness equipment': {
-    required: ['fitness', 'sport', 'exercise', 'gym', 'workout', 'deportivo', 'entrenamiento'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'baby', 'pet', 'toy']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'baby', 'pet', 'toy', 'phone']
   },
   'jewelry women': {
-    required: ['jewelry', 'jewel', 'joyería', 'necklace', 'earring', 'bracelet', 'ring', 'pendant'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone']
   },
   'phone accessories': {
-    required: ['phone', 'mobile', 'celular', 'smartphone', 'case', 'cover', 'charger'],
-    excluded: ['baby', 'pet', 'toy', 'home', 'kitchen']
+    excluded: ['baby', 'pet', 'toy', 'home', 'kitchen', 'fashion']
   },
   'shoes women': {
-    required: ['shoes', 'shoe', 'zapatos', 'zapato', 'sneakers', 'heels', 'boots', 'sandals', 'footwear'],
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'kitchen']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'kitchen', 'phone']
   }
 };
 
@@ -188,39 +170,28 @@ function convertPercentageToRating(percentage) {
   return percentage;
 }
 
+// ✅ FILTRO RELAJADO - Solo excluye, no requiere palabras
 function isProductRelevant(productTitle, category) {
   const title = productTitle.toLowerCase();
   
+  // Si no hay filtros para esta categoría, aceptar
   if (!CATEGORY_KEYWORDS_FILTER[category]) {
     return true;
   }
   
   const filters = CATEGORY_KEYWORDS_FILTER[category];
   
+  // Solo verificar palabras EXCLUIDAS
   if (filters.excluded) {
     for (const excludedWord of filters.excluded) {
       if (title.includes(excludedWord.toLowerCase())) {
-        console.log(`❌ Producto excluido por "${excludedWord}": ${title.substring(0, 50)}`);
+        console.log(`❌ Excluido por "${excludedWord}": ${title.substring(0, 50)}`);
         return false;
       }
     }
   }
   
-  if (filters.required) {
-    let hasRequiredWord = false;
-    for (const requiredWord of filters.required) {
-      if (title.includes(requiredWord.toLowerCase())) {
-        hasRequiredWord = true;
-        break;
-      }
-    }
-    
-    if (!hasRequiredWord) {
-      console.log(`❌ Producto sin palabras requeridas: ${title.substring(0, 50)}`);
-      return false;
-    }
-  }
-  
+  // ✅ SIN verificación de palabras requeridas - ACEPTAR TODO lo que no esté excluido
   return true;
 }
 
@@ -239,17 +210,17 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         let randomKeyword;
         if (category && category !== 'all') {
           randomKeyword = category;
-          console.log('🎯 Usando categoría específica:', randomKeyword);
+          console.log('🎯 Categoría específica:', randomKeyword);
         } else {
           randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-          console.log('🎲 Usando categoría aleatoria:', randomKeyword);
+          console.log('🎲 Categoría aleatoria:', randomKeyword);
         }
         
-        // ✅ PRIORIZAR LAST_VOLUME_DESC para productos más vendidos
-        const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
+        // ✅ SIEMPRE usar LAST_VOLUME_DESC
+        const sortMethod = 'LAST_VOLUME_DESC';
         
         console.log('🔑 Keyword:', randomKeyword);
-        console.log('🎲 Sort:', randomSort, '(MÁS VENDIDOS)');
+        console.log('📊 Sort:', sortMethod, '(MÁS VENDIDOS)');
 
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
@@ -258,8 +229,8 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,app_sale_price,target_sale_price,lastest_volume,commission_rate,hot_product_commission_rate,original_price,discount',
             keywords: randomKeyword,
             page_no: '1',
-            page_size: '40',
-            sort: randomSort,
+            page_size: '50',  // ✅ Pedir MÁS productos para tener donde elegir
+            sort: sortMethod,
             target_currency: 'USD',
             target_language: 'ES',
             tracking_id: 'default'
@@ -276,14 +247,22 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           items = data.aliexpress_affiliate_hotproduct_query_response.products.product;
         }
 
-        console.log('📦 Productos brutos extraídos:', items.length);
+        console.log('📦 Productos brutos:', items.length);
 
         if (items.length > 0) {
+          // ✅ Filtrar SOLO por exclusiones (más permisivo)
           const filteredItems = items.filter(item => {
             return isProductRelevant(item.product_title, randomKeyword);
           });
           
-          console.log('✅ Productos después de filtrar por categoría:', filteredItems.length);
+          console.log('✅ Después de filtrar:', filteredItems.length);
+          
+          // ✅ ORDENAR por ventas (últimos 30 días o latest_volume)
+          filteredItems.sort((a, b) => {
+            const salesA = parseInt(a.lastest_volume) || parseInt(a['30day_orders']) || 0;
+            const salesB = parseInt(b.lastest_volume) || parseInt(b['30day_orders']) || 0;
+            return salesB - salesA; // Descendente
+          });
 
           products = filteredItems.slice(0, 12).map((item, index) => {
             const salesLastest = parseInt(item.lastest_volume) || 0;
@@ -314,7 +293,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             };
           });
           
-          console.log('✅ Productos finales generados (MÁS VENDIDOS):', products.length);
+          console.log('✅ Productos finales (TOP MÁS VENDIDOS):', products.length);
         }
 
       } catch(e) {
