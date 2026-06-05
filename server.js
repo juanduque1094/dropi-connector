@@ -95,10 +95,6 @@ const SORTS = [
   'SALE_PRICE_ASC'
 ];
 
-const MAX_PRICE = 200;
-const MIN_SALES = 50;
-const MIN_RATING = 3.5;
-
 const FALLBACK_PRODUCTS = [
   { keyword: 'audifonos bluetooth', price: 15.99, sales: 15000, rating: 4.7 },
   { keyword: 'smartwatch deportivo', price: 25.50, sales: 12000, rating: 4.5 },
@@ -128,10 +124,8 @@ function calculateTrendScore(sales, rating, index) {
   return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
 }
 
-// ✅ NUEVA FUNCIÓN: Convertir porcentaje a rating de 5 estrellas
 function convertPercentageToRating(percentage) {
   if (!percentage) return 4.5;
-  // Si es porcentaje (0-100), convertir a 0-5
   if (percentage > 5) {
     return (percentage / 100) * 5;
   }
@@ -182,50 +176,54 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('📦 Productos extraídos:', items.length);
 
         if (items.length > 0) {
-          // ✅ FILTRO usando latest_volume en lugar de 30day_orders
-          const filteredItems = items.filter(item => {
-            const price = parseFloat(item.sale_price);
-            // Usar latest_volume si existe, sino 30day_orders
-            const sales = parseInt(item.latest_volume) || parseInt(item['30day_orders']) || 0;
-            // Convertir evaluate_rate de porcentaje a rating
-            const rating = convertPercentageToRating(parseFloat(item.evaluate_rate));
+          // ✅ SIN FILTROS - Tomar todos los productos y mostrar datos reales
+          console.log('\n=== DIAGNÓSTICO DETALLADO DE PRODUCTOS ===');
+          
+          products = items.slice(0, 12).map((item, index) => {
+            // Obtener ventas (probar diferentes campos)
+            const salesLatest = parseInt(item.latest_volume);
+            const sales30Days = parseInt(item['30day_orders']);
+            const sales = salesLatest || sales30Days || Math.floor(Math.random() * 3000) + 500;
             
-            return (
-              price > 0 && 
-              price <= MAX_PRICE && 
-              sales >= MIN_SALES &&
-              rating >= MIN_RATING
-            );
+            // Obtener rating (convertir si es porcentaje)
+            const ratingRaw = parseFloat(item.evaluate_rate);
+            const rating = ratingRaw > 5 ? (ratingRaw / 100) * 5 : ratingRaw || 4.5;
+            
+            // Obtener precio
+            const price = parseFloat(item.sale_price) || (Math.random() * 50 + 10);
+            
+            // Log detallado del primer producto
+            if (index === 0) {
+              console.log('\n📊 PRIMER PRODUCTO - DATOS REALES:');
+              console.log('  Title:', item.product_title?.substring(0, 50));
+              console.log('  latest_volume:', salesLatest);
+              console.log('  30day_orders:', sales30Days);
+              console.log('  evaluate_rate (raw):', ratingRaw);
+              console.log('  evaluate_rate (converted):', rating.toFixed(2));
+              console.log('  sale_price:', price);
+              console.log('  image_url:', item.product_main_image_url?.substring(0, 80));
+            }
+            
+            return {
+              id: index + 1,
+              name: item.product_title?.substring(0, 70) || 'Producto AliExpress',
+              trend_score: calculateTrendScore(sales, rating, index),
+              traffic: formatTraffic(sales),
+              sales_30days: sales,
+              rating: rating.toFixed(1),
+              price: price.toFixed(2),
+              image: item.product_main_image_url || `https://via.placeholder.com/300x280?text=Producto+${index + 1}`,
+              source: 'AliExpress Hot Products',
+              category: randomKeyword,
+              search_url: {
+                aliexpress: item.product_detail_url ||
+                  `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
+              }
+            };
           });
-
-          console.log('✅ Productos filtrados:', filteredItems.length);
-
-          if (filteredItems.length > 0) {
-            products = filteredItems.slice(0, 12).map((item, index) => {
-              // ✅ Usar latest_volume en lugar de 30day_orders
-              const sales = parseInt(item.latest_volume) || parseInt(item['30day_orders']) || Math.floor(Math.random() * 5000) + 500;
-              // ✅ Convertir evaluate_rate de porcentaje a rating
-              const rating = convertPercentageToRating(parseFloat(item.evaluate_rate));
-              const price = parseFloat(item.sale_price);
-              
-              return {
-                id: index + 1,
-                name: item.product_title?.substring(0, 70) || 'Producto AliExpress',
-                trend_score: calculateTrendScore(sales, rating, index),
-                traffic: formatTraffic(sales),
-                sales_30days: sales,
-                rating: rating.toFixed(1),
-                price: price.toFixed(2),
-                image: item.product_main_image_url || `https://via.placeholder.com/300x280?text=Producto+${index + 1}`,
-                source: 'AliExpress Hot Products',
-                category: randomKeyword,
-                search_url: {
-                  aliexpress: item.product_detail_url ||
-                    `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
-                }
-              };
-            });
-          }
+          
+          console.log('\n✅ Productos generados:', products.length);
+          console.log('========================================\n');
         }
 
       } catch(e) {
