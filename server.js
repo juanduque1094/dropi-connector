@@ -124,14 +124,6 @@ function calculateTrendScore(sales, rating, index) {
   return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
 }
 
-function convertPercentageToRating(percentage) {
-  if (!percentage) return 4.5;
-  if (percentage > 5) {
-    return (percentage / 100) * 5;
-  }
-  return percentage;
-}
-
 app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
@@ -148,11 +140,13 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('🔑 Keyword:', randomKeyword);
         console.log('🎲 Sort:', randomSort);
 
+        // ✅ CAMPOS EXPANDIDOS - Solicitar TODOS los campos disponibles
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
           {
             country: 'CO',
-            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
+            // ✅ SOLICITAR MÁS CAMPOS incluyendo sales y ratings
+            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,commission_rate,hot_product_commission_rate,original_price,app_sale_price,discount,sales_volume,total_available_stock,shop_id,category_id,product_video_url,product_small_image_urls',
             keywords: randomKeyword,
             page_no: '1',
             page_size: '20',
@@ -165,6 +159,10 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           appSecret
         );
 
+        console.log('\n========== RESPUESTA COMPLETA DE ALIEXPRESS ==========');
+        console.log(JSON.stringify(data, null, 2).substring(0, 5000));
+        console.log('\n======================================================\n');
+
         let items = [];
         
         if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
@@ -176,33 +174,32 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('📦 Productos extraídos:', items.length);
 
         if (items.length > 0) {
-          // ✅ SIN FILTROS - Tomar todos los productos y mostrar datos reales
-          console.log('\n=== DIAGNÓSTICO DETALLADO DE PRODUCTOS ===');
-          
+          // Mostrar estructura del primer producto
+          console.log('\n🔍 ESTRUCTURA PRIMER PRODUCTO:');
+          const firstItem = items[0];
+          console.log('Campos disponibles:', Object.keys(firstItem));
+          console.log('sales_volume:', firstItem.sales_volume);
+          console.log('30day_orders:', firstItem['30day_orders']);
+          console.log('latest_volume:', firstItem.latest_volume);
+          console.log('evaluate_rate:', firstItem.evaluate_rate);
+          console.log('total_available_stock:', firstItem.total_available_stock);
+          console.log('app_sale_price:', firstItem.app_sale_price);
+          console.log('discount:', firstItem.discount);
+          console.log('\n');
+
           products = items.slice(0, 12).map((item, index) => {
-            // Obtener ventas (probar diferentes campos)
-            const salesLatest = parseInt(item.latest_volume);
-            const sales30Days = parseInt(item['30day_orders']);
-            const sales = salesLatest || sales30Days || Math.floor(Math.random() * 3000) + 500;
+            // ✅ PROBAR MÚLTIPLES CAMPOS PARA VENTAS
+            const sales = parseInt(item.sales_volume) || 
+                         parseInt(item.latest_volume) || 
+                         parseInt(item['30day_orders']) || 
+                         Math.floor(Math.random() * 3000) + 500;
             
-            // Obtener rating (convertir si es porcentaje)
-            const ratingRaw = parseFloat(item.evaluate_rate);
-            const rating = ratingRaw > 5 ? (ratingRaw / 100) * 5 : ratingRaw || 4.5;
+            // ✅ CONVERTIR RATING CORRECTAMENTE
+            let rating = parseFloat(item.evaluate_rate);
+            if (rating > 5) rating = (rating / 100) * 5;
+            if (!rating || rating <= 0) rating = 4.5;
             
-            // Obtener precio
-            const price = parseFloat(item.sale_price) || (Math.random() * 50 + 10);
-            
-            // Log detallado del primer producto
-            if (index === 0) {
-              console.log('\n📊 PRIMER PRODUCTO - DATOS REALES:');
-              console.log('  Title:', item.product_title?.substring(0, 50));
-              console.log('  latest_volume:', salesLatest);
-              console.log('  30day_orders:', sales30Days);
-              console.log('  evaluate_rate (raw):', ratingRaw);
-              console.log('  evaluate_rate (converted):', rating.toFixed(2));
-              console.log('  sale_price:', price);
-              console.log('  image_url:', item.product_main_image_url?.substring(0, 80));
-            }
+            const price = parseFloat(item.sale_price || item.app_sale_price) || (Math.random() * 50 + 10);
             
             return {
               id: index + 1,
@@ -222,12 +219,12 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             };
           });
           
-          console.log('\n✅ Productos generados:', products.length);
-          console.log('========================================\n');
+          console.log('✅ Productos generados:', products.length);
         }
 
       } catch(e) {
         console.log('❌ Error AliExpress API:', e.message);
+        console.error(e);
       }
     }
 
