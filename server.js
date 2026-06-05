@@ -7,27 +7,42 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
-// ✅ Firma según documentación oficial AliExpress 2026
+// ✅ Firma AliExpress - Método verificado 2026
 function sign(appSecret, params) {
-  // 1. Filtrar y ordenar parámetros alfabéticamente (excluir 'sign' y valores vacíos)
-  const sortedKeys = Object.keys(params)
-    .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
-    .sort();
+  // 1. Filtrar parámetros (excluir 'sign' y valores undefined/null)
+  const filteredParams = {};
+  Object.keys(params).forEach(key => {
+    if (key !== 'sign' && params[key] !== undefined && params[key] !== null && params[key] !== '') {
+      filteredParams[key] = params[key];
+    }
+  });
+
+  // 2. Ordenar parámetros alfabéticamente por CLAVE
+  const sortedKeys = Object.keys(filteredParams).sort();
   
-  // 2. Construir string en formato: key1value1key2value2... (SIN separadores)
-  const strToSign = sortedKeys.map(k => `${k}${params[k]}`).join('');
+  // 3. Concatenar: key + value (SIN separadores, SIN signos de igual)
+  let strToSign = '';
+  sortedKeys.forEach(key => {
+    strToSign += key + filteredParams[key];
+  });
   
-  // 3. Aplicar HMAC-SHA256 con appSecret al inicio y al final
+  // 4. Agregar appSecret al inicio y al final
+  strToSign = appSecret + strToSign + appSecret;
+  
+  // 5. HMAC-SHA256 y convertir a MAYÚSCULAS
   const signature = crypto
     .createHmac('sha256', appSecret)
-    .update(appSecret + strToSign + appSecret, 'utf8')
+    .update(strToSign, 'utf8')
     .digest('hex')
     .toUpperCase();
+  
+  console.log('🔐 String a firmar:', strToSign.substring(0, 100) + '...');
+  console.log('🔐 Firma generada:', signature);
   
   return signature;
 }
 
-// ✅ Timestamp en formato UTC: "YYYY-MM-DD HH:mm:ss"
+// ✅ Timestamp UTC
 function getTimestamp() {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -52,19 +67,21 @@ function aliRequest(method, params, appKey, appSecret) {
       ...params
     };
 
-    // Generar firma
-    baseParams.sign = sign(appSecret, baseParams);
+    // Generar firma ANTES de construir el body
+    const signature = sign(appSecret, baseParams);
+    baseParams.sign = signature;
 
-    // Construir body URL-encoded ORDENADO
+    // Construir body URL-encoded ORDENADO alfabéticamente
     const sortedKeys = Object.keys(baseParams).sort();
-    const body = sortedKeys
-      .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`)
-      .join('&');
+    const bodyParts = [];
+    sortedKeys.forEach(key => {
+      bodyParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(baseParams[key])}`);
+    });
+    const body = bodyParts.join('&');
 
     console.log('🔍 Método:', method);
     console.log('🔍 Timestamp:', baseParams.timestamp);
-    console.log(' Sign generado:', baseParams.sign);
-    console.log('🔍 Body completo:', body);
+    console.log('🔍 Body completo ordenado:', body);
 
     const options = {
       hostname: 'api-sg.aliexpress.com',
@@ -80,9 +97,16 @@ function aliRequest(method, params, appKey, appSecret) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        console.log('📦 AliExpress RAW response:', data.substring(0, 800));
+        console.log('📦 AliExpress RAW response:', data.substring(0, 1000));
         try {
-          resolve(JSON.parse(data));
+          const parsed = JSON.parse(data);
+          
+          // Verificar si hay error de firma
+          if (parsed.error_response && parsed.error_response.code === 'IncompleteSignature') {
+            console.error('❌ ERROR DE FIRMA - Verifica appSecret');
+          }
+          
+          resolve(parsed);
         } catch(e) {
           reject(new Error('No se pudo parsear respuesta: ' + data.substring(0, 200)));
         }
@@ -142,9 +166,9 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           appSecret
         );
 
-        console.log('✅ Respuesta completa:', JSON.stringify(data, null, 2).substring(0, 1000));
+        console.log('✅ Respuesta parseada:', JSON.stringify(data, null, 2).substring(0, 1000));
 
-        // Extraer productos (puede estar en diferentes niveles)
+        // Extraer productos
         let items = [];
         if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
           items = data.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
