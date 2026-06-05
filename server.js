@@ -7,20 +7,22 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
-// ✅ Firma corregida según documentación oficial AliExpress Open Platform
+// ✅ Firma corregida según documentación oficial AliExpress 2024-2026
 function sign(appSecret, params) {
-  // 1. Ordenar parámetros alfabéticamente por clave
-  const sortedKeys = Object.keys(params).sort();
-  // 2. Concatenar: clave + valor (sin separadores entre pares)
-  const concatenated = sortedKeys.map(k => `${k}${params[k]}`).join('');
-  // 3. Envolver con appSecret al inicio Y al final
-  const strToSign = appSecret + concatenated + appSecret;
-  // 4. HMAC-SHA256 en MAYÚSCULAS
-  return crypto
+  // 1. Ordenar parámetros alfabéticamente por clave (excluir 'sign')
+  const sortedKeys = Object.keys(params).filter(k => k !== 'sign').sort();
+  
+  // 2. Concatenar en formato key=value&key=value (CON separadores)
+  const concatenated = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  
+  // 3. Aplicar HMAC-SHA256 con appSecret como clave
+  const signature = crypto
     .createHmac('sha256', appSecret)
-    .update(strToSign, 'utf8')
+    .update(concatenated, 'utf8')
     .digest('hex')
     .toUpperCase();
+  
+  return signature;
 }
 
 // ✅ Timestamp en formato UTC requerido por AliExpress: "YYYY-MM-DD HH:mm:ss"
@@ -58,7 +60,7 @@ function aliRequest(method, params, appKey, appSecret) {
 
     console.log('🔍 Método:', method);
     console.log('🔍 Timestamp:', baseParams.timestamp);
-    console.log('🔍 Sign generado:', baseParams.sign);
+    console.log(' Sign generado:', baseParams.sign);
     console.log('🔍 Body (primeros 300 chars):', body.substring(0, 300));
 
     const options = {
@@ -161,7 +163,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         console.log('❌ Error llamando AliExpress API:', e.message);
       }
     } else {
-      console.log('⚠️ Variables de entorno no encontradas. Usando fallback.');
+      console.log('️ Variables de entorno no encontradas. Usando fallback.');
     }
 
     // Si no hay productos reales, usar fallback
