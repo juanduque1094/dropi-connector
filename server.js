@@ -7,7 +7,6 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
-// ✅ Firma AliExpress - Método verificado (method2)
 function sign(appSecret, params) {
   const sortedKeys = Object.keys(params)
     .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
@@ -80,21 +79,24 @@ function aliRequest(method, params, appKey, appSecret) {
   });
 }
 
-// ✅ Keywords aleatorias para variedad de productos
+// ✅ Keywords variadas pero enfocadas en dropshipping
 const KEYWORDS = [
-  'fashion', 'jewelry', 'watches', 'bags', 'shoes',
-  'home decor', 'kitchen gadgets', 'electronics', 'sports', 'beauty',
-  'toys', 'phone accessories', 'smart gadgets', 'fitness', 'pet supplies',
-  'baby products', 'automotive', 'garden tools', 'office supplies', 'outdoor'
+  'fashion accessories', 'jewelry', 'watches women', 'bags women',
+  'home decor', 'kitchen gadgets', 'phone accessories', 'smart gadgets',
+  'fitness equipment', 'beauty tools', 'toys kids', 'pet supplies',
+  'baby products', 'garden tools', 'office supplies', 'car accessories',
+  'sports equipment', 'outdoor gear', 'electronics gadgets', 'health beauty'
 ];
 
-// ✅ Sorts aleatorios para más variedad
+// ✅ Sorts optimizados para dropshipping (sin SALE_PRICE_DESC)
 const SORTS = [
-  'LAST_VOLUME_DESC',
-  'SALE_PRICE_ASC',
-  'SALE_PRICE_DESC',
-  'EVALUATE_SCORE_DESC'
+  'LAST_VOLUME_DESC',      // Más vendidos
+  'EVALUATE_SCORE_DESC',   // Mejor calificados
+  'SALE_PRICE_ASC'         // Precio ascendente (económicos)
 ];
+
+// ✅ Precio máximo para dropshipping (USD)
+const MAX_PRICE = 300;
 
 const FALLBACK_PRODUCTS = [
   { keyword: 'audifonos bluetooth inalambricos', traffic: '100K+' },
@@ -121,12 +123,11 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
     if (appKey && appSecret) {
       try {
-        // Seleccionar keyword y sort aleatorios
         const randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
         const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
         
         console.log('🔑 Keyword aleatoria:', randomKeyword);
-        console.log('🎲 Sort aleatorio:', randomSort);
+        console.log(' Sort aleatorio:', randomSort);
 
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
@@ -135,7 +136,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
             keywords: randomKeyword,
             page_no: '1',
-            page_size: '12',
+            page_size: '20',  // Pedimos más para filtrar
             sort: randomSort,
             target_currency: 'USD',
             target_language: 'ES',
@@ -148,15 +149,24 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         const items =
           data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
 
-        console.log('📋 Productos encontrados:', items.length);
+        console.log('📋 Productos brutos encontrados:', items.length);
 
-        if (items.length > 0) {
-          products = items.map((item, index) => ({
+        // ✅ Filtrar productos con precio razonable para dropshipping
+        const filteredItems = items.filter(item => {
+          const price = parseFloat(item.sale_price);
+          return price > 0 && price <= MAX_PRICE;
+        });
+
+        console.log('📋 Productos después de filtrar (precio ≤ $300):', filteredItems.length);
+
+        if (filteredItems.length > 0) {
+          // Tomar solo los primeros 12
+          products = filteredItems.slice(0, 12).map((item, index) => ({
             id: index + 1,
             name: item.product_title?.substring(0, 60) || 'Producto AliExpress',
             trend_score: Math.max(70, 99 - index * 2),
             traffic: item['30day_orders'] ? `${item['30day_orders']} vendidos` : '50K+',
-            price: item.sale_price,
+            price: parseFloat(item.sale_price).toFixed(2),
             image: item.product_main_image_url,
             source: 'AliExpress Hot Products',
             category: randomKeyword,
@@ -180,6 +190,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         name: item.keyword,
         trend_score: Math.max(70, 99 - index * 2),
         traffic: item.traffic,
+        price: (Math.random() * 50 + 5).toFixed(2),
         source: 'Google Trends Colombia (fallback)',
         search_url: {
           aliexpress: `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.keyword)}`
@@ -203,4 +214,4 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, () => console.log(` Servidor corriendo en puerto ${PORT}`));
