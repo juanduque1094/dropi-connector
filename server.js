@@ -7,54 +7,13 @@ app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
-// ============================================
-// MÉTODO 1: Firma estándar AliExpress (appSecret envolviendo)
-// ============================================
-function signMethod1(appSecret, params) {
+// ✅ Firma AliExpress - Método verificado (method2)
+function sign(appSecret, params) {
   const sortedKeys = Object.keys(params)
-    .filter(k => k !== 'sign')
-    .sort();
-  
-  let strToSign = '';
-  sortedKeys.forEach(key => {
-    strToSign += key + params[key];
-  });
-  
-  strToSign = appSecret + strToSign + appSecret;
-  
-  return crypto
-    .createHmac('sha256', appSecret)
-    .update(strToSign, 'utf8')
-    .digest('hex')
-    .toUpperCase();
-}
-
-// ============================================
-// MÉTODO 2: Firma alternativa (sin envolver)
-// ============================================
-function signMethod2(appSecret, params) {
-  const sortedKeys = Object.keys(params)
-    .filter(k => k !== 'sign')
+    .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
     .sort();
   
   const strToSign = sortedKeys.map(k => `${k}${params[k]}`).join('');
-  
-  return crypto
-    .createHmac('sha256', appSecret)
-    .update(strToSign, 'utf8')
-    .digest('hex')
-    .toUpperCase();
-}
-
-// ============================================
-// MÉTODO 3: Firma con key=value&key=value
-// ============================================
-function signMethod3(appSecret, params) {
-  const sortedKeys = Object.keys(params)
-    .filter(k => k !== 'sign')
-    .sort();
-  
-  const strToSign = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
   
   return crypto
     .createHmac('sha256', appSecret)
@@ -74,7 +33,7 @@ function getTimestamp() {
   return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
 }
 
-function aliRequest(method, params, appKey, appSecret, signMethod = 'method1') {
+function aliRequest(method, params, appKey, appSecret) {
   return new Promise((resolve, reject) => {
     const baseParams = {
       app_key: appKey,
@@ -86,25 +45,12 @@ function aliRequest(method, params, appKey, appSecret, signMethod = 'method1') {
       ...params
     };
 
-    // Seleccionar método de firma
-    let signature;
-    if (signMethod === 'method1') {
-      signature = signMethod1(appSecret, baseParams);
-    } else if (signMethod === 'method2') {
-      signature = signMethod2(appSecret, baseParams);
-    } else {
-      signature = signMethod3(appSecret, baseParams);
-    }
-    
-    baseParams.sign = signature;
+    baseParams.sign = sign(appSecret, baseParams);
 
     const sortedKeys = Object.keys(baseParams).sort();
     const body = sortedKeys
       .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`)
       .join('&');
-
-    console.log(`🔐 Usando método: ${signMethod}`);
-    console.log(`🔐 Firma generada: ${signature}`);
 
     const options = {
       hostname: 'api-sg.aliexpress.com',
@@ -120,7 +66,6 @@ function aliRequest(method, params, appKey, appSecret, signMethod = 'method1') {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        console.log(`📦 Respuesta (${signMethod}):`, data.substring(0, 500));
         try {
           resolve(JSON.parse(data));
         } catch(e) {
@@ -135,62 +80,6 @@ function aliRequest(method, params, appKey, appSecret, signMethod = 'method1') {
   });
 }
 
-// ============================================
-// ENDPOINT DE DIAGNÓSTICO - Prueba los 3 métodos
-// ============================================
-app.get('/api/test-signature', async (req, res) => {
-  const appKey = process.env.ALIEXPRESS_APP_KEY;
-  const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-  
-  console.log('🔍 DIAGNÓSTICO INICIADO');
-  console.log(`🔑 App Key: ${appKey}`);
-  console.log(`🔑 App Secret (primeros 10 chars): ${appSecret?.substring(0, 10)}...`);
-  console.log(`🔑 App Secret (últimos 10 chars): ...${appSecret?.slice(-10)}`);
-  
-  const results = {};
-  
-  // Probar los 3 métodos
-  for (const method of ['method1', 'method2', 'method3']) {
-    try {
-      const data = await aliRequest(
-        'aliexpress.affiliate.product.query',
-        {
-          country: 'CO',
-          fields: 'product_id,product_title,sale_price',
-          keywords: 'fashion',
-          page_size: '5',
-          target_currency: 'USD',
-          target_language: 'ES'
-        },
-        appKey,
-        appSecret,
-        method
-      );
-      
-      results[method] = {
-        success: !data.error_response,
-        response: data
-      };
-      
-      if (!data.error_response) {
-        console.log(`✅ ${method} FUNCIONÓ!`);
-      }
-    } catch(e) {
-      results[method] = { error: e.message };
-    }
-  }
-  
-  res.json({
-    appKey,
-    appSecretPrefix: appSecret?.substring(0, 10),
-    appSecretSuffix: appSecret?.slice(-10),
-    results
-  });
-});
-
-// ============================================
-// ENDPOINT PRINCIPAL
-// ============================================
 const FALLBACK_PRODUCTS = [
   { keyword: 'audifonos bluetooth inalambricos', traffic: '100K+' },
   { keyword: 'smartwatch deportivo mujer', traffic: '80K+' },
@@ -210,73 +99,52 @@ app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    console.log('🔑 APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
+    console.log(' APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
 
     let products = [];
 
     if (appKey && appSecret) {
       try {
-        // Probar con method1 primero, luego method2, luego method3
-        let data = null;
-        let workingMethod = null;
-        
-        for (const method of ['method1', 'method2', 'method3']) {
-          try {
-            data = await aliRequest(
-              'aliexpress.affiliate.hotproduct.query',
-              {
-                country: 'CO',
-                fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
-                keywords: 'fashion',
-                page_no: '1',
-                page_size: '12',
-                sort: 'LAST_VOLUME_DESC',
-                target_currency: 'USD',
-                target_language: 'ES',
-                tracking_id: 'default'
-              },
-              appKey,
-              appSecret,
-              method
-            );
-            
-            if (!data.error_response) {
-              workingMethod = method;
-              console.log(`✅ Método working: ${method}`);
-              break;
+        const data = await aliRequest(
+          'aliexpress.affiliate.hotproduct.query',
+          {
+            country: 'CO',
+            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
+            keywords: 'fashion',
+            page_no: '1',
+            page_size: '12',
+            sort: 'LAST_VOLUME_DESC',
+            target_currency: 'USD',
+            target_language: 'ES',
+            tracking_id: 'default'
+          },
+          appKey,
+          appSecret
+        );
+
+        const items =
+          data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
+
+        console.log('📋 Productos encontrados:', items.length);
+
+        if (items.length > 0) {
+          products = items.map((item, index) => ({
+            id: index + 1,
+            name: item.product_title?.substring(0, 60) || 'Producto AliExpress',
+            trend_score: Math.max(70, 99 - index * 2),
+            traffic: item['30day_orders'] ? `${item['30day_orders']} vendidos` : '50K+',
+            price: item.sale_price,
+            image: item.product_main_image_url,
+            source: 'AliExpress Hot Products',
+            search_url: {
+              aliexpress: item.product_detail_url ||
+                `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
             }
-          } catch(e) {
-            console.log(`❌ ${method} falló:`, e.message);
-          }
-        }
-
-        if (data && !data.error_response) {
-          const items =
-            data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product || [];
-
-          console.log('📋 Productos encontrados:', items.length);
-
-          if (items.length > 0) {
-            products = items.map((item, index) => ({
-              id: index + 1,
-              name: item.product_title?.substring(0, 60) || 'Producto AliExpress',
-              trend_score: Math.max(70, 99 - index * 2),
-              traffic: item['30day_orders'] ? `${item['30day_orders']} vendidos` : '50K+',
-              price: item.sale_price,
-              image: item.product_main_image_url,
-              source: 'AliExpress Hot Products',
-              search_url: {
-                aliexpress: item.product_detail_url ||
-                  `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
-              }
-            }));
-          }
-        } else {
-          console.log('⚠️ Ningún método funcionó. Usando fallback.');
+          }));
         }
 
       } catch(e) {
-        console.log(' Error llamando AliExpress API:', e.message);
+        console.log('❌ Error llamando AliExpress API:', e.message);
       }
     }
 
