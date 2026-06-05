@@ -11,9 +11,7 @@ function sign(appSecret, params) {
   const sortedKeys = Object.keys(params)
     .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
     .sort();
-  
   const strToSign = sortedKeys.map(k => `${k}${params[k]}`).join('');
-  
   return crypto
     .createHmac('sha256', appSecret)
     .update(strToSign, 'utf8')
@@ -43,9 +41,7 @@ function aliRequest(method, params, appKey, appSecret) {
       v: '2.0',
       ...params
     };
-
     baseParams.sign = sign(appSecret, baseParams);
-
     const sortedKeys = Object.keys(baseParams).sort();
     const body = sortedKeys
       .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`)
@@ -72,7 +68,6 @@ function aliRequest(method, params, appKey, appSecret) {
         }
       });
     });
-    
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -89,44 +84,40 @@ const KEYWORDS = [
   'makeup tools', 'skin care', 'hair accessories', 'nail art'
 ];
 
-const SORTS = [
-  'LAST_VOLUME_DESC'  // ✅ SIEMPRE más vendidos
-];
-
-// ✅ FILTROS MÁS RELAJADOS - Solo palabras excluidas (sin requeridas)
+// ✅ FILTROS SOLO POR EXCLUSIÓN
 const CATEGORY_KEYWORDS_FILTER = {
   'baby products': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'raspberry', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll', 'phone', 'charger', 'usb', 'bluetooth']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll', 'phone', 'charger', 'usb', 'bluetooth', 'gym', 'fitness']
   },
   'toys kids': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'adult', 'baby', 'infant', 'phone', 'charger']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'adult', 'baby', 'infant', 'phone', 'charger', 'gym']
   },
   'pet supplies': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'human', 'adult', 'phone', 'charger']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'human', 'adult', 'phone', 'charger', 'baby']
   },
   'home decor': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone', 'fitness']
   },
   'kitchen gadgets': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'phone', 'toy']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'phone', 'toy', 'fitness']
   },
   'beauty tools': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone', 'kitchen']
   },
   'fashion accessories': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone', 'kitchen']
   },
   'electronics gadgets': {
-    excluded: ['baby', 'pet', 'toy', 'home decor', 'kitchen', 'fashion']
+    excluded: ['baby', 'pet', 'toy', 'home decor', 'kitchen', 'fashion', 'fitness']
   },
   'fitness equipment': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'baby', 'pet', 'toy', 'phone']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'baby', 'pet', 'toy', 'phone', 'kitchen', 'beauty']
   },
   'jewelry women': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone']
+    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone', 'kitchen']
   },
   'phone accessories': {
-    excluded: ['baby', 'pet', 'toy', 'home', 'kitchen', 'fashion']
+    excluded: ['baby', 'pet', 'toy', 'home', 'kitchen', 'fashion', 'fitness']
   },
   'shoes women': {
     excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'kitchen', 'phone']
@@ -164,24 +155,14 @@ function calculateTrendScore(sales, rating, index) {
 
 function convertPercentageToRating(percentage) {
   if (!percentage) return 4.5;
-  if (percentage > 5) {
-    return (percentage / 100) * 5;
-  }
+  if (percentage > 5) return (percentage / 100) * 5;
   return percentage;
 }
 
-// ✅ FILTRO RELAJADO - Solo excluye, no requiere palabras
 function isProductRelevant(productTitle, category) {
   const title = productTitle.toLowerCase();
-  
-  // Si no hay filtros para esta categoría, aceptar
-  if (!CATEGORY_KEYWORDS_FILTER[category]) {
-    return true;
-  }
-  
+  if (!CATEGORY_KEYWORDS_FILTER[category]) return true;
   const filters = CATEGORY_KEYWORDS_FILTER[category];
-  
-  // Solo verificar palabras EXCLUIDAS
   if (filters.excluded) {
     for (const excludedWord of filters.excluded) {
       if (title.includes(excludedWord.toLowerCase())) {
@@ -190,8 +171,6 @@ function isProductRelevant(productTitle, category) {
       }
     }
   }
-  
-  // ✅ SIN verificación de palabras requeridas - ACEPTAR TODO lo que no esté excluido
   return true;
 }
 
@@ -199,80 +178,124 @@ app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    
     const { category } = req.body;
-    console.log('📂 Categoría del frontend:', category);
+    console.log('📂 Categoría:', category);
 
     let products = [];
 
     if (appKey && appSecret) {
       try {
-        let randomKeyword;
+        let keyword;
         if (category && category !== 'all') {
-          randomKeyword = category;
-          console.log('🎯 Categoría específica:', randomKeyword);
+          keyword = category;
+          console.log('🎯 Categoría específica:', keyword);
         } else {
-          randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-          console.log('🎲 Categoría aleatoria:', randomKeyword);
+          keyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
+          console.log('🎲 Categoría aleatoria:', keyword);
         }
-        
-        // ✅ SIEMPRE usar LAST_VOLUME_DESC
-        const sortMethod = 'LAST_VOLUME_DESC';
-        
-        console.log('🔑 Keyword:', randomKeyword);
-        console.log('📊 Sort:', sortMethod, '(MÁS VENDIDOS)');
 
-        const data = await aliRequest(
-          'aliexpress.affiliate.hotproduct.query',
-          {
-            country: 'CO',
-            fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders,latest_volume,app_sale_price,target_sale_price,lastest_volume,commission_rate,hot_product_commission_rate,original_price,discount',
-            keywords: randomKeyword,
-            page_no: '1',
-            page_size: '50',  // ✅ Pedir MÁS productos para tener donde elegir
-            sort: sortMethod,
-            target_currency: 'USD',
-            target_language: 'ES',
-            tracking_id: 'default'
-          },
-          appKey,
-          appSecret
-        );
+        console.log('🔑 Keyword:', keyword);
 
+        // ✅ PROBAR DOS ENDPOINTS para obtener más datos de ventas
         let items = [];
-        
-        if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
-          items = data.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
-        } else if (data?.aliexpress_affiliate_hotproduct_query_response?.products?.product) {
-          items = data.aliexpress_affiliate_hotproduct_query_response.products.product;
+        let salesData = {};
+
+        // Intento 1: hotproduct.query
+        try {
+          const data1 = await aliRequest(
+            'aliexpress.affiliate.hotproduct.query',
+            {
+              country: 'CO',
+              fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,lastest_volume,latest_volume,30day_orders,app_sale_price,target_sale_price,commission_rate',
+              keywords: keyword,
+              page_no: '1',
+              page_size: '50',
+              sort: 'LAST_VOLUME_DESC',
+              target_currency: 'USD',
+              target_language: 'ES',
+              tracking_id: 'default'
+            },
+            appKey,
+            appSecret
+          );
+
+          if (data1?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
+            items = data1.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
+          }
+          console.log('📦 Hot products - Items brutos:', items.length);
+        } catch(e) {
+          console.log('❌ Error hotproduct:', e.message);
         }
 
-        console.log('📦 Productos brutos:', items.length);
+        // Intento 2: product.query (puede tener más datos)
+        try {
+          const data2 = await aliRequest(
+            'aliexpress.affiliate.product.query',
+            {
+              country: 'CO',
+              fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30days_num,all_num,commission_rate',
+              keywords: keyword,
+              page_no: '1',
+              page_size: '50',
+              sort: 'SALE_VOLUME_DESC',
+              target_currency: 'USD',
+              target_language: 'ES',
+              tracking_id: 'default'
+            },
+            appKey,
+            appSecret
+          );
+
+          console.log('📦 Product query response:', JSON.stringify(data2, null, 2).substring(0, 2000));
+
+          if (data2?.aliexpress_affiliate_product_query_response?.resp_result?.result?.products?.product) {
+            const items2 = data2.aliexpress_affiliate_product_query_response.resp_result.result.products.product;
+            console.log('📦 Product query - Items:', items2.length);
+            
+            // Si el segundo endpoint tiene más datos, usarlo
+            if (items2.length > 0) {
+              items = items2;
+              console.log('✅ Usando datos de product.query');
+            }
+          }
+        } catch(e) {
+          console.log('❌ Error product.query:', e.message);
+        }
+
+        console.log(' Total items para procesar:', items.length);
 
         if (items.length > 0) {
-          // ✅ Filtrar SOLO por exclusiones (más permisivo)
-          const filteredItems = items.filter(item => {
-            return isProductRelevant(item.product_title, randomKeyword);
-          });
-          
+          const filteredItems = items.filter(item => isProductRelevant(item.product_title, keyword));
           console.log('✅ Después de filtrar:', filteredItems.length);
-          
-          // ✅ ORDENAR por ventas (últimos 30 días o latest_volume)
+
+          // ✅ ORDENAR por ventas (usando cualquier campo disponible)
           filteredItems.sort((a, b) => {
-            const salesA = parseInt(a.lastest_volume) || parseInt(a['30day_orders']) || 0;
-            const salesB = parseInt(b.lastest_volume) || parseInt(b['30day_orders']) || 0;
-            return salesB - salesA; // Descendente
+            const salesA = parseInt(a['30days_num']) || parseInt(a.all_num) || parseInt(a.lastest_volume) || parseInt(a.latest_volume) || parseInt(a['30day_orders']) || 0;
+            const salesB = parseInt(b['30days_num']) || parseInt(b.all_num) || parseInt(b.lastest_volume) || parseInt(b.latest_volume) || parseInt(b['30day_orders']) || 0;
+            return salesB - salesA;
           });
 
+          // Mostrar estructura del primer producto para debug
+          if (filteredItems.length > 0) {
+            console.log('🔍 Primer producto campos:', Object.keys(filteredItems[0]));
+            console.log('  30days_num:', filteredItems[0]['30days_num']);
+            console.log('  all_num:', filteredItems[0].all_num);
+            console.log('  lastest_volume:', filteredItems[0].lastest_volume);
+          }
+
           products = filteredItems.slice(0, 12).map((item, index) => {
+            // ✅ USAR EL CAMPO CON MÁS VENTAS
+            const sales30days = parseInt(item['30days_num']) || 0;
+            const salesAll = parseInt(item.all_num) || 0;
             const salesLastest = parseInt(item.lastest_volume) || 0;
             const salesLatest = parseInt(item.latest_volume) || 0;
-            const sales30Days = parseInt(item['30day_orders']) || 0;
-            const sales = salesLastest || salesLatest || sales30Days || Math.floor(Math.random() * 3000) + 500;
+            const sales30d = parseInt(item['30day_orders']) || 0;
+            
+            // Usar el mayor valor disponible
+            const sales = Math.max(sales30days, salesAll, salesLastest, salesLatest, sales30d, 0);
             
             const ratingRaw = parseFloat(item.evaluate_rate);
             const rating = convertPercentageToRating(ratingRaw);
-            
             const price = parseFloat(item.target_sale_price || item.app_sale_price || item.sale_price) || (Math.random() * 50 + 10);
             
             return {
@@ -285,7 +308,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
               price: price.toFixed(2),
               image: item.product_main_image_url || `https://via.placeholder.com/300x280?text=Producto+${index + 1}`,
               source: 'AliExpress Hot Products',
-              category: randomKeyword,
+              category: keyword,
               search_url: {
                 aliexpress: item.product_detail_url ||
                   `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
@@ -293,12 +316,11 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             };
           });
           
-          console.log('✅ Productos finales (TOP MÁS VENDIDOS):', products.length);
+          console.log('✅ Productos finales:', products.length);
         }
 
       } catch(e) {
-        console.log('❌ Error AliExpress API:', e.message);
-        console.error(e);
+        console.log('❌ Error general API:', e.message);
       }
     }
 
