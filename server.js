@@ -80,6 +80,22 @@ function aliRequest(method, params, appKey, appSecret) {
   });
 }
 
+// ✅ Keywords aleatorias para variedad de productos
+const KEYWORDS = [
+  'fashion', 'jewelry', 'watches', 'bags', 'shoes',
+  'home decor', 'kitchen gadgets', 'electronics', 'sports', 'beauty',
+  'toys', 'phone accessories', 'smart gadgets', 'fitness', 'pet supplies',
+  'baby products', 'automotive', 'garden tools', 'office supplies', 'outdoor'
+];
+
+// ✅ Sorts aleatorios para más variedad
+const SORTS = [
+  'LAST_VOLUME_DESC',
+  'SALE_PRICE_ASC',
+  'SALE_PRICE_DESC',
+  'EVALUATE_SCORE_DESC'
+];
+
 const FALLBACK_PRODUCTS = [
   { keyword: 'audifonos bluetooth inalambricos', traffic: '100K+' },
   { keyword: 'smartwatch deportivo mujer', traffic: '80K+' },
@@ -105,15 +121,22 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
     if (appKey && appSecret) {
       try {
+        // Seleccionar keyword y sort aleatorios
+        const randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
+        const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
+        
+        console.log(' Keyword aleatoria:', randomKeyword);
+        console.log('🎲 Sort aleatorio:', randomSort);
+
         const data = await aliRequest(
           'aliexpress.affiliate.hotproduct.query',
           {
             country: 'CO',
             fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
-            keywords: 'fashion',
+            keywords: randomKeyword,
             page_no: '1',
             page_size: '12',
-            sort: 'LAST_VOLUME_DESC',
+            sort: randomSort,
             target_currency: 'USD',
             target_language: 'ES',
             tracking_id: 'default'
@@ -136,6 +159,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             price: item.sale_price,
             image: item.product_main_image_url,
             source: 'AliExpress Hot Products',
+            category: randomKeyword,
             search_url: {
               aliexpress: item.product_detail_url ||
                 `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
@@ -167,7 +191,8 @@ app.post('/api/trenddropi/generate', async (req, res) => {
       success: true,
       products,
       total: products.length,
-      source: products[0]?.source
+      source: products[0]?.source,
+      category: products[0]?.category || 'fallback'
     });
 
   } catch (error) {
