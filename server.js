@@ -83,7 +83,7 @@ function aliRequest(method, params, appKey, appSecret) {
 }
 
 // ============================================
-// CONFIGURACIÓN OPTIMIZADA
+// CONFIGURACIÓN OPTIMIZADA - FILTROS RELAJADOS
 // ============================================
 
 // Keywords enfocadas en nichos rentables de dropshipping
@@ -94,7 +94,8 @@ const KEYWORDS = [
   'baby products', 'garden tools', 'office supplies', 'car accessories',
   'sports equipment', 'outdoor gear', 'electronics gadgets', 'health beauty',
   'women clothing', 'men clothing', 'shoes women', 'shoes men',
-  'makeup tools', 'skin care', 'hair accessories', 'nail art'
+  'makeup tools', 'skin care', 'hair accessories', 'nail art',
+  'trending products', 'viral products', 'best seller'
 ];
 
 // Sorts optimizados para encontrar productos virales
@@ -104,10 +105,10 @@ const SORTS = [
   'SALE_PRICE_ASC'         // Precio ascendente (económicos)
 ];
 
-// Límites para dropshipping
-const MAX_PRICE = 100;      // Precio máximo USD (productos vendibles)
-const MIN_SALES = 500;      // Ventas mínimas en 30 días (productos virales reales)
-const MIN_RATING = 4.0;     // Rating mínimo (calidad)
+// ✅ FILTROS RELAJADOS para captar más productos reales
+const MAX_PRICE = 200;      // Precio máximo USD
+const MIN_SALES = 50;       // Ventas mínimas en 30 días (bajo para captar más)
+const MIN_RATING = 3.5;     // Rating mínimo
 
 // Fallback con datos realistas
 const FALLBACK_PRODUCTS = [
@@ -137,10 +138,9 @@ function formatTraffic(sales) {
 }
 
 function calculateTrendScore(sales, rating, index) {
-  // Score basado en ventas reales, rating y posición
-  const salesScore = Math.min(sales / 1000, 10); // Max 10 puntos
-  const ratingScore = (rating || 4.5) * 2; // Max 10 puntos
-  const positionScore = Math.max(0, 10 - index); // Max 10 puntos
+  const salesScore = Math.min(sales / 1000, 10);
+  const ratingScore = (rating || 4.5) * 2;
+  const positionScore = Math.max(0, 10 - index);
   return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
 }
 
@@ -151,7 +151,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    console.log(' APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
+    console.log('🔑 APP_KEY present:', !!appKey, '| APP_SECRET present:', !!appSecret);
 
     let products = [];
 
@@ -160,7 +160,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
         const randomKeyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
         const randomSort = SORTS[Math.floor(Math.random() * SORTS.length)];
         
-        console.log(' Keyword:', randomKeyword);
+        console.log('🔑 Keyword:', randomKeyword);
         console.log('🎲 Sort:', randomSort);
 
         const data = await aliRequest(
@@ -170,7 +170,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
             fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30day_orders',
             keywords: randomKeyword,
             page_no: '1',
-            page_size: '30',  // Pedimos más para filtrar mejor
+            page_size: '40',  // Pedimos más para tener más opciones
             sort: randomSort,
             target_currency: 'USD',
             target_language: 'ES',
@@ -185,7 +185,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
         console.log('📦 Productos brutos:', items.length);
 
-        // ✅ FILTRO ESTRICTO: Solo productos con ventas reales, precio razonable y buen rating
+        // ✅ FILTRO RELAJADO: Captar más productos reales
         const filteredItems = items.filter(item => {
           const price = parseFloat(item.sale_price);
           const sales = parseInt(item['30day_orders']) || 0;
@@ -199,7 +199,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
           );
         });
 
-        console.log('✅ Productos filtrados (ventas ≥500, precio ≤$100, rating ≥4.0):', filteredItems.length);
+        console.log('✅ Productos filtrados (ventas ≥50, precio ≤$200, rating ≥3.5):', filteredItems.length);
 
         if (filteredItems.length > 0) {
           products = filteredItems.slice(0, 12).map((item, index) => {
@@ -212,8 +212,8 @@ app.post('/api/trenddropi/generate', async (req, res) => {
               name: item.product_title?.substring(0, 70) || 'Producto AliExpress',
               trend_score: calculateTrendScore(sales, rating, index),
               traffic: formatTraffic(sales),
-              sales_30days: sales,  // Dato real
-              rating: rating.toFixed(1),  // Rating real
+              sales_30days: sales,
+              rating: rating.toFixed(1),
               price: price.toFixed(2),
               image: item.product_main_image_url,
               source: 'AliExpress Hot Products',
@@ -233,7 +233,7 @@ app.post('/api/trenddropi/generate', async (req, res) => {
 
     // Fallback si no hay productos reales
     if (!products.length) {
-      console.log(' Usando fallback');
+      console.log('🔄 Usando fallback');
       const shuffled = [...FALLBACK_PRODUCTS].sort(() => Math.random() - 0.5).slice(0, 12);
       products = shuffled.map((item, index) => ({
         id: index + 1,
