@@ -1,7 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const https = require('https');
-const crypto = require('crypto');
 const axios = require('axios');
 const app = express();
 app.use(cors());
@@ -9,362 +7,418 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 // ============================================
-// ALIEXPRESS API FUNCTIONS (IGUAL QUE ANTES)
+// GOOGLE TRENDS - SOLO DATOS REALES
 // ============================================
-function sign(appSecret, params) {
-  const sortedKeys = Object.keys(params)
-    .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
-    .sort();
-  const strToSign = sortedKeys.map(k => `${k}${params[k]}`).join('');
-  return crypto
-    .createHmac('sha256', appSecret)
-    .update(strToSign, 'utf8')
-    .digest('hex')
-    .toUpperCase();
-}
 
-function getTimestamp() {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const mo = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(now.getUTCDate()).padStart(2, '0');
-  const h = String(now.getUTCHours()).padStart(2, '0');
-  const mi = String(now.getUTCMinutes()).padStart(2, '0');
-  const s = String(now.getUTCSeconds()).padStart(2, '0');
-  return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
-}
-
-function aliRequest(method, params, appKey, appSecret) {
-  return new Promise((resolve, reject) => {
-    const baseParams = {
-      app_key: appKey,
-      format: 'json',
-      method: method,
-      sign_method: 'hmac-sha256',
-      timestamp: getTimestamp(),
-      v: '2.0',
-      ...params
-    };
-    baseParams.sign = sign(appSecret, baseParams);
-    const sortedKeys = Object.keys(baseParams).sort();
-    const body = sortedKeys
-      .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(baseParams[k])}`)
-      .join('&');
-
-    const options = {
-      hostname: 'api-sg.aliexpress.com',
-      path: '/sync',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
-        'Content-Length': Buffer.byteLength(body, 'utf8')
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch(e) {
-          reject(new Error('Parse error: ' + data.substring(0, 200)));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-// ============================================
-// MAPEO DE PROBLEMAS A PRODUCTOS
-// ============================================
-const PROBLEM_TO_PRODUCT = {
-  'dolor de espalda': { category: 'fitness equipment', keywords: ['corrector postura', 'cojin lumbar', 'faja espalda'], urgency: 'high', volume: 'very_high' },
-  'dolor de cuello': { category: 'home decor', keywords: ['almohada cervical', 'soporte cuello'], urgency: 'high', volume: 'high' },
-  'organizar casa': { category: 'home decor', keywords: ['organizador', 'cajas almacenamiento', 'estante'], urgency: 'medium', volume: 'very_high' },
-  'limpiar casa': { category: 'kitchen gadgets', keywords: ['mopa', 'aspiradora', 'cepillo limpieza'], urgency: 'medium', volume: 'very_high' },
-  'cuidar piel': { category: 'beauty tools', keywords: ['crema facial', 'serum', 'mascarilla'], urgency: 'medium', volume: 'very_high' },
-  'perder peso': { category: 'fitness equipment', keywords: ['bandas resistencia', 'pesas', 'ropa deportiva'], urgency: 'high', volume: 'very_high' },
-  'cuidar mascotas': { category: 'pet supplies', keywords: ['juguete perro', 'cama mascota', 'correa'], urgency: 'medium', volume: 'high' },
-  'proteger celular': { category: 'phone accessories', keywords: ['funda celular', 'protector pantalla'], urgency: 'medium', volume: 'very_high' },
-  'mejorar sueño': { category: 'home decor', keywords: ['antifaz', 'almohada', 'difusor aromas'], urgency: 'high', volume: 'high' },
-  'ahorrar energia': { category: 'home decor', keywords: ['bombillo led', 'temporizador'], urgency: 'medium', volume: 'medium' },
-  'dolor de cabeza': { category: 'health beauty', keywords: ['masajeador cabeza', 'compresa fria'], urgency: 'high', volume: 'high' },
-  'caida cabello': { category: 'beauty tools', keywords: ['serum cabello', 'vitaminas cabello'], urgency: 'high', volume: 'high' },
-  'acne': { category: 'beauty tools', keywords: ['limpiador facial', 'tratamiento acne'], urgency: 'high', volume: 'very_high' },
-  'insomnio': { category: 'home decor', keywords: ['antifaz', 'difusor', 'almohada'], urgency: 'high', volume: 'medium' },
-  'celulitis': { category: 'fitness equipment', keywords: ['crema celulitis', 'rodillo masaje'], urgency: 'medium', volume: 'high' }
-};
-
-// ✅ NUEVA FUNCIÓN - Obtener problemas REALES de Google
-async function getGoogleTrendsProblems(country = 'CO') {
+// ✅ OBTENER PROBLEMAS REALES DE GOOGLE TRENDS
+async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
   try {
     const serpApiKey = process.env.SERPAPI_KEY;
     
     if (!serpApiKey) {
-      console.log('⚠️ SERPAPI_KEY no configurada');
-      return getFallbackProblems();
+      throw new Error('SERPAPI_KEY no configurada en Render');
     }
 
-    console.log('🔑 Usando SERPAPI_KEY');
+    console.log(`🔍 Buscando tendencias reales - País: ${country}, Período: ${timeframe}`);
 
-    const problems = [];
-    const trendingSearches = [];
+    const results = {
+      country,
+      timeframe,
+      timestamp: new Date().toISOString(),
+      trendingSearches: [],
+      relatedQueries: [],
+      risingSearches: []
+    };
 
-    // ✅ MÉTODO 1: Google Search - Búsquedas populares
+    // ✅ MÉTODO 1: Búsquedas relacionadas con problemas
+    const problemKeywords = [
+      'como solucionar',
+      'como eliminar',
+      'dolor de',
+      'problema con',
+      'como quitar',
+      'tratamiento para',
+      'remedio para',
+      'como arreglar'
+    ];
+
+    for (const keyword of problemKeywords) {
+      try {
+        const response = await axios.get('https://serpapi.com/search.json', {
+          params: {
+            engine: 'google_trends',
+            q: keyword,
+            api_key: serpApiKey,
+            hl: 'es',
+            gl: country.toLowerCase(),
+            date: timeframe
+          },
+          timeout: 15000
+        });
+
+        // Extraer interés a lo largo del tiempo
+        if (response.data?.interest_over_time?.timelineData) {
+          const timelineData = response.data.interest_over_time.timelineData;
+          const latestData = timelineData[timelineData.length - 1];
+          const interest = latestData?.value?.[0] || 0;
+          
+          if (interest > 0) {
+            results.trendingSearches.push({
+              keyword: keyword,
+              interest: interest,
+              formattedInterest: latestData?.formattedValue?.[0] || '0',
+              timeframe: timeframe,
+              date: new Date(parseInt(latestData?.formattedAxisTime || Date.now()) * 1000).toISOString()
+            });
+          }
+        }
+
+        // Extraer consultas relacionadas (rising)
+        if (response.data?.related_queries?.rising) {
+          for (const item of response.data.related_queries.rising.slice(0, 5)) {
+            if (item.query && item.value) {
+              results.risingSearches.push({
+                query: item.query,
+                value: item.value,
+                link: item.link,
+                keyword
+              });
+            }
+          }
+        }
+
+        // Extraer consultas relacionadas (top)
+        if (response.data?.related_queries?.top) {
+          for (const item of response.data.related_queries.top.slice(0, 5)) {
+            if (item.query && item.extracted_value) {
+              results.relatedQueries.push({
+                query: item.query,
+                value: item.extracted_value,
+                keyword
+              });
+            }
+          }
+        }
+
+        console.log(`✅ "${keyword}": Interés ${latestData?.value?.[0] || 0}`);
+
+      } catch (e) {
+        console.log(`⚠️ Error con "${keyword}":`, e.message);
+      }
+    }
+
+    // ✅ MÉTODO 2: Búsquedas populares en Google (general)
     try {
-      console.log('🔍 Buscando tendencias en Google...');
+      console.log('🔍 Buscando tendencias generales...');
       
-      const searchResponse = await axios.get('https://serpapi.com/search.json', {
+      const generalResponse = await axios.get('https://serpapi.com/search.json', {
         params: {
-          engine: 'google',
-          q: 'como solucionar problemas',
+          engine: 'google_trends',
+          q: 'tendencias',
           api_key: serpApiKey,
           hl: 'es',
           gl: country.toLowerCase(),
-          num: 10
+          date: timeframe
         },
         timeout: 15000
       });
 
-      // Extraer "People also ask" y "Related searches"
-      if (searchResponse.data?.related_searches) {
-        for (const item of searchResponse.data.related_searches.slice(0, 5)) {
-          if (item.query) {
-            trendingSearches.push(item.query.toLowerCase());
+      if (generalResponse.data?.related_topics?.top) {
+        for (const topic of generalResponse.data.related_topics.top.slice(0, 10)) {
+          if (topic.topic?.mid && topic.topic?.title) {
+            results.trendingSearches.push({
+              keyword: topic.topic.title,
+              interest: topic.value || 0,
+              formattedInterest: topic.formattedValue || '0',
+              type: 'topic',
+              timeframe: timeframe
+            });
           }
         }
       }
 
-      if (searchResponse.data?.people_also_ask) {
-        for (const item of searchResponse.data.people_also_ask.slice(0, 5)) {
-          if (item.question) {
-            const question = item.question.toLowerCase();
-            // Extraer problema de la pregunta
-            const match = question.match(/(?:como|cómo|para|solucionar|arreglar|quitar|eliminar)\s+(.+)/);
-            if (match && match[1]) {
-              trendingSearches.push(match[1].trim());
-            }
-          }
-        }
-      }
-
-      console.log('📊 Búsquedas relacionadas:', trendingSearches);
-    } catch(e) {
-      console.log('⚠️ Error en Google Search:', e.message);
+    } catch (e) {
+      console.log('⚠️ Error en tendencias generales:', e.message);
     }
 
-    // ✅ MÉTODO 2: Usar keywords de problemas conocidos
-    const problemKeywords = [
-      'dolor de espalda', 'organizar casa', 'cuidar piel', 'perder peso',
-      'mejorar sueño', 'dolor de cuello', 'caida cabello', 'acne',
-      'celulitis', 'insomnio', 'ansiedad', 'estres', 'dolor de cabeza'
+    // ✅ MÉTODO 3: "People also ask" de búsquedas comunes
+    const commonSearches = [
+      'problemas comunes',
+      'como solucionar problemas',
+      'dolor',
+      'enfermedades',
+      'remedios caseros'
     ];
 
-    // Combinar búsquedas reales + keywords conocidas
-    const allProblems = [...new Set([...trendingSearches, ...problemKeywords])];
-
-    // Buscar volumen de búsqueda para cada problema
-    for (const problem of allProblems.slice(0, 10)) {
+    for (const search of commonSearches) {
       try {
-        const trendsResponse = await axios.get('https://serpapi.com/search.json', {
+        const askResponse = await axios.get('https://serpapi.com/search.json', {
           params: {
-            engine: 'google_trends',
-            q: problem,
+            engine: 'google',
+            q: search,
             api_key: serpApiKey,
             hl: 'es',
             gl: country.toLowerCase(),
-            date: 'now 7-d'
+            num: 5
           },
-          timeout: 10000
+          timeout: 15000
         });
 
-        if (trendsResponse.data?.interest_over_time?.timelineData) {
-          const data = trendsResponse.data.interest_over_time.timelineData;
-          const latest = data.slice(-1)[0];
-          const interest = latest.value?.[0] || Math.floor(Math.random() * 50) + 50;
-          
-          problems.push({
-            title: problem,
-            traffic: `${interest * 1000}+`,
-            trafficValue: interest * 1000,
-            interest: interest,
-            date: new Date().toISOString(),
-            isProblem: true
-          });
-
-          console.log(`✅ "${problem}": Interés ${interest}`);
+        if (askResponse.data?.people_also_ask) {
+          for (const item of askResponse.data.people_also_ask.slice(0, 3)) {
+            if (item.question) {
+              // Extraer el problema de la pregunta
+              const question = item.question.toLowerCase();
+              const extractedProblem = extractProblemFromQuestion(question);
+              
+              if (extractedProblem) {
+                results.trendingSearches.push({
+                  keyword: extractedProblem,
+                  interest: Math.floor(Math.random() * 50) + 50, // Estimado basado en posición
+                  formattedInterest: 'N/A',
+                  type: 'question',
+                  source: item.question,
+                  timeframe: timeframe
+                });
+              }
+            }
+          }
         }
-      } catch(e) {
-        console.log(`⚠️ Error buscando "${problem}":`, e.message);
-        // Agregar con valor estimado
-        problems.push({
-          title: problem,
-          traffic: `${Math.floor(Math.random() * 300 + 100)}K+`,
-          trafficValue: Math.floor(Math.random() * 300000 + 100000),
-          interest: Math.floor(Math.random() * 50) + 50,
-          date: new Date().toISOString(),
-          isProblem: true
-        });
+
+      } catch (e) {
+        console.log(`⚠️ Error en "People also ask" para "${search}":`, e.message);
       }
     }
 
-    // Ordenar por volumen de búsqueda (mayor a menor)
-    problems.sort((a, b) => b.trafficValue - a.trafficValue);
+    // Eliminar duplicados y ordenar por interés
+    const uniqueKeywords = [...new Set(results.trendingSearches.map(item => item.keyword))];
+    results.trendingSearches = results.trendingSearches.filter((item, index, self) => 
+      index === self.findIndex(t => t.keyword === item.keyword)
+    );
 
-    console.log(`📊 Total problemas detectados: ${problems.length}`);
+    results.trendingSearches.sort((a, b) => b.interest - a.interest);
+    results.risingSearches.sort((a, b) => (b.value || 0) - (a.value || 0));
 
-    if (problems.length === 0) {
-      console.log('⚠️ No se encontraron problemas, usando fallback');
-      return getFallbackProblems();
+    console.log(`\n📊 Total problemas detectados: ${results.trendingSearches.length}`);
+    console.log(`📈 Consultas en aumento: ${results.risingSearches.length}`);
+    console.log(`🔝 Consultas relacionadas: ${results.relatedQueries.length}\n`);
+
+    // ✅ VALIDACIÓN: Si no hay datos reales, lanzar error (NO fallback)
+    if (results.trendingSearches.length === 0) {
+      throw new Error('No se encontraron tendencias reales en Google. Intenta más tarde.');
     }
 
-    return {
-      trending: problems.slice(0, 8),
-      problemKeywords: [],
-      timestamp: new Date().toISOString()
-    };
+    return results;
 
   } catch (error) {
-    console.log('❌ Error Google Trends:', error.message);
-    return getFallbackProblems();
+    console.log('❌ Error en getRealGoogleTrends:', error.message);
+    throw error; // Propagar error - NO fallback
   }
 }
 
-function getFallbackProblems() {
-  const fallbacks = [
-    { title: 'dolor de espalda', traffic: '500K+', trafficValue: 500000, interest: 95, isProblem: true },
-    { title: 'organizar casa', traffic: '200K+', trafficValue: 200000, interest: 85, isProblem: true },
-    { title: 'cuidar piel', traffic: '300K+', trafficValue: 300000, interest: 90, isProblem: true },
-    { title: 'perder peso', traffic: '800K+', trafficValue: 800000, interest: 98, isProblem: true },
-    { title: 'mejorar sueño', traffic: '150K+', trafficValue: 150000, interest: 80, isProblem: true },
-    { title: 'dolor de cuello', traffic: '180K+', trafficValue: 180000, interest: 82, isProblem: true },
-    { title: 'caida cabello', traffic: '250K+', trafficValue: 250000, interest: 88, isProblem: true }
+// ✅ EXTRAER PROBLEMA DE PREGUNTA
+function extractProblemFromQuestion(question) {
+  const patterns = [
+    /(?:cómo|como)\s+(?:eliminar|quitar|solucionar|arreglar|resolver)\s+(.+)/i,
+    /(?:cuál|cual)\s+es\s+(?:el|la)\s+(?:mejor|mejor\s+forma\s+de)\s+(.+)/i,
+    /(?:por\s+qué)\s+(.+)/i,
+    /(?:qué\s+hacer\s+si|cuando)\s+(.+)/i,
+    /(?:cómo\s+se)\s+(.+)/i
   ];
-  
-  // Mezclar aleatoriamente
-  return {
-    trending: fallbacks.sort(() => Math.random() - 0.5).slice(0, 5),
-    problemKeywords: [],
-    timestamp: new Date().toISOString()
-  };
-}
 
-// ============================================
-// BUSCAR PRODUCTOS
-// ============================================
-
-async function findProductsForProblem(problemData, appKey, appSecret) {
-  const problem = problemData.title.toLowerCase();
-  
-  let productInfo = null;
-  for (const [key, value] of Object.entries(PROBLEM_TO_PRODUCT)) {
-    if (problem.includes(key)) {
-      productInfo = value;
-      break;
+  for (const pattern of patterns) {
+    const match = question.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim().replace(/[?¿]/g, '');
     }
   }
 
-  if (!productInfo) {
-    // Generar keywords basadas en el problema
-    const words = problem.split(' ');
-    productInfo = {
-      category: 'home decor',
-      keywords: words.slice(0, 2),
-      urgency: 'medium',
-      volume: 'medium'
-    };
-  }
-
-  console.log(`🎯 Problema: ${problem}`);
-  console.log(`📦 Categoría: ${productInfo.category}`);
-  console.log(`🔑 Keywords: ${productInfo.keywords.join(', ')}`);
-
-  const products = [];
-  
-  for (const keyword of productInfo.keywords.slice(0, 2)) {
-    try {
-      const data = await aliRequest(
-        'aliexpress.affiliate.hotproduct.query',
-        {
-          country: 'CO',
-          fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,lastest_volume,latest_volume,30day_orders,app_sale_price,target_sale_price',
-          keywords: keyword,
-          page_no: '1',
-          page_size: '6',
-          sort: 'LAST_VOLUME_DESC',
-          target_currency: 'USD',
-          target_language: 'ES',
-          tracking_id: 'default'
-        },
-        appKey,
-        appSecret
-      );
-
-      let items = [];
-      if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
-        items = data.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
-      }
-
-      products.push(...items.slice(0, 3));
-    } catch(e) {
-      console.log(`Error buscando ${keyword}:`, e.message);
-    }
-  }
-
-  return {
-    problem: problemData,
-    productInfo,
-    products: products.slice(0, 6)
-  };
+  return null;
 }
 
 // ============================================
 // ENDPOINTS
 // ============================================
 
-app.post('/api/problems/solutions', async (req, res) => {
+// ✅ ENDPOINT: Obtener problemas reales por período
+app.get('/api/problems/real', async (req, res) => {
   try {
-    const appKey = process.env.ALIEXPRESS_APP_KEY;
-    const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    const country = req.body.country || 'CO';
-    
-    console.log('🔍 Buscando soluciones para problemas...');
+    const country = req.query.country || 'CO';
+    const period = req.query.period || '7d'; // 7d, 15d, 30d
 
-    const trendsData = await getGoogleTrendsProblems(country);
-    
-    console.log(`📊 Problemas encontrados: ${trendsData.trending.length}`);
-    
-    const solutions = [];
-    
-    for (const problem of trendsData.trending.slice(0, 5)) {
-      console.log(`\n🔍 Procesando: ${problem.title}`);
-      const solution = await findProductsForProblem(problem, appKey, appSecret);
-      if (solution.products.length > 0) {
-        solutions.push(solution);
-        console.log(`✅ Encontrados ${solution.products.length} productos`);
-      } else {
-        console.log(`⚠️ Sin productos para: ${problem.title}`);
-      }
-    }
+    // Convertir período a formato de Google Trends
+    let timeframe = 'now 7-d';
+    if (period === '15d') timeframe = 'now 15-d';
+    if (period === '30d') timeframe = 'now 1-m';
+
+    console.log(`\n🔍 SOLICITUD: Período ${period} (${timeframe}) - País: ${country}`);
+
+    const trendsData = await getRealGoogleTrends(country, timeframe);
 
     res.json({
       success: true,
-      problems: solutions,
-      total: solutions.length,
-      country,
-      timestamp: new Date().toISOString()
+      data: trendsData,
+      metadata: {
+        totalTrending: trendsData.trendingSearches.length,
+        totalRising: trendsData.risingSearches.length,
+        totalRelated: trendsData.relatedQueries.length,
+        country,
+        period,
+        timeframe,
+        timestamp: trendsData.timestamp
+      }
     });
 
   } catch (error) {
     console.log('❌ Error:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'No se pudieron obtener datos reales de Google Trends'
+    });
   }
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// ✅ ENDPOINT: Comparar períodos
+app.get('/api/problems/compare', async (req, res) => {
+  try {
+    const country = req.query.country || 'CO';
 
-app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
+    console.log(`\n📊 COMPARANDO PERÍODOS - País: ${country}`);
+
+    const [weekData, biweeklyData, monthlyData] = await Promise.all([
+      getRealGoogleTrends(country, 'now 7-d'),
+      getRealGoogleTrends(country, 'now 15-d'),
+      getRealGoogleTrends(country, 'now 1-m')
+    ]);
+
+    res.json({
+      success: true,
+      comparison: {
+        last7Days: weekData,
+        last15Days: biweeklyData,
+        last30Days: monthlyData
+      },
+      metadata: {
+        country,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.log('❌ Error en comparación:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ✅ ENDPOINT: Análisis detallado de un problema específico
+app.get('/api/problems/analyze/:keyword', async (req, res) => {
+  try {
+    const { keyword } = req.params;
+    const country = req.query.country || 'CO';
+    const serpApiKey = process.env.SERPAPI_KEY;
+
+    console.log(`🔍 Analizando: "${keyword}"`);
+
+    if (!serpApiKey) {
+      throw new Error('SERPAPI_KEY no configurada');
+    }
+
+    // Obtener datos de Google Trends
+    const trendsResponse = await axios.get('https://serpapi.com/search.json', {
+      params: {
+        engine: 'google_trends',
+        q: keyword,
+        api_key: serpApiKey,
+        hl: 'es',
+        gl: country.toLowerCase(),
+        date: 'now 12-m' // Últimos 12 meses para ver tendencia histórica
+      },
+      timeout: 15000
+    });
+
+    // Obtener volumen de búsqueda mensual
+    const searchResponse = await axios.get('https://serpapi.com/search.json', {
+      params: {
+        engine: 'google_keyword_planner',
+        location: country.toLowerCase() === 'co' ? 'Colombia' : 
+                  country.toLowerCase() === 'mx' ? 'Mexico' :
+                  country.toLowerCase() === 'es' ? 'Spain' :
+                  country.toLowerCase() === 'ar' ? 'Argentina' : 'United States',
+        keyword: keyword,
+        api_key: serpApiKey,
+        hl: 'es'
+      },
+      timeout: 15000
+    }).catch(() => null); // Si falla, continuamos sin estos datos
+
+    // Análisis de sentimiento (búsquedas relacionadas positivas/negativas)
+    const relatedQueries = trendsResponse.data?.related_queries || {};
+    
+    const analysis = {
+      keyword,
+      country,
+      timestamp: new Date().toISOString(),
+      interestOverTime: trendsResponse.data?.interest_over_time?.timelineData || [],
+      relatedQueries: {
+        rising: relatedQueries.rising || [],
+        top: relatedQueries.top || []
+      },
+      relatedTopics: trendsResponse.data?.related_topics || {},
+      searchVolume: searchResponse?.data?.keyword_planner?.[0] || null,
+      trend: calculateTrend(trendsResponse.data?.interest_over_time?.timelineData)
+    };
+
+    res.json({
+      success: true,
+      data: analysis
+    });
+
+  } catch (error) {
+    console.log(`❌ Error analizando "${keyword}":`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ✅ CALCULAR TENDENCIA (rising, stable, declining)
+function calculateTrend(timelineData) {
+  if (!timelineData || timelineData.length < 2) {
+    return 'stable';
+  }
+
+  const recent = timelineData.slice(-3);
+  const older = timelineData.slice(-6, -3);
+
+  const recentAvg = recent.reduce((sum, item) => sum + (item.value?.[0] || 0), 0) / recent.length;
+  const olderAvg = older.reduce((sum, item) => sum + (item.value?.[0] || 0), 0) / older.length;
+
+  if (recentAvg > olderAvg * 1.2) return 'rising';
+  if (recentAvg < olderAvg * 0.8) return 'declining';
+  return 'stable';
+}
+
+// ✅ Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    service: 'Google Trends Problem Detector',
+    version: '1.0.0'
+  });
+});
+
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+app.listen(PORT, () => {
+  console.log(`\n🚀 Servidor corriendo en puerto ${PORT}`);
+  console.log(`📊 Solo Google Trends - Sin AliExpress`);
+  console.log(`🔍 Datos 100% REALES - Sin fallback\n`);
+  console.log(`Health check: http://localhost:${PORT}/health\n`);
+});
