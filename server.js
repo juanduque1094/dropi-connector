@@ -2,11 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const https = require('https');
 const crypto = require('crypto');
+const axios = require('axios');
 const app = express();
 app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
+// ============================================
+// ALIEXPRESS API FUNCTIONS
+// ============================================
 function sign(appSecret, params) {
   const sortedKeys = Object.keys(params)
     .filter(k => k !== 'sign' && params[k] !== undefined && params[k] !== '')
@@ -74,286 +78,407 @@ function aliRequest(method, params, appKey, appSecret) {
   });
 }
 
-const KEYWORDS = [
-  'fashion accessories', 'jewelry women', 'watches women', 'bags women',
-  'home decor', 'kitchen gadgets', 'phone accessories', 'smart gadgets',
-  'fitness equipment', 'beauty tools', 'toys kids', 'pet supplies',
-  'baby products', 'garden tools', 'office supplies', 'car accessories',
-  'sports equipment', 'outdoor gear', 'electronics gadgets', 'health beauty',
-  'women clothing', 'men clothing', 'shoes women', 'shoes men',
-  'makeup tools', 'skin care', 'hair accessories', 'nail art'
+// ============================================
+// GOOGLE TRENDS - DETECTOR DE PROBLEMAS
+// ============================================
+
+// ✅ PALABRAS CLAVE DE PROBLEMAS/DOLORES
+const PROBLEM_KEYWORDS = [
+  'como eliminar', 'como quitar', 'dolor de', 'problema con',
+  'solucion para', 'como arreglar', 'como limpiar', 'como organizar',
+  'mejor producto para', 'como mejorar', 'como cuidar', 'como proteger',
+  'tratamiento para', 'remedio para', 'como prevenir', 'como evitar'
 ];
 
-// ✅ FILTROS SOLO POR EXCLUSIÓN
-const CATEGORY_KEYWORDS_FILTER = {
-  'baby products': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'arduino', 'microphone', 'speaker', 'tool', 'adult', 'princess', 'doll', 'phone', 'charger', 'usb', 'bluetooth', 'gym', 'fitness']
+// ✅ MAPEO DE PROBLEMAS A PRODUCTOS
+const PROBLEM_TO_PRODUCT = {
+  'dolor de espalda': {
+    category: 'fitness equipment',
+    keywords: ['corrector postura', 'cojin lumbar', 'faja espalda'],
+    urgency: 'high',
+    volume: 'very_high'
   },
-  'toys kids': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'adult', 'baby', 'infant', 'phone', 'charger', 'gym']
+  'dolor de cuello': {
+    category: 'home decor',
+    keywords: ['almohada cervical', 'soporte cuello', 'masajeador cuello'],
+    urgency: 'high',
+    volume: 'high'
   },
-  'pet supplies': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'human', 'adult', 'phone', 'charger', 'baby']
+  'organizar casa': {
+    category: 'home decor',
+    keywords: ['organizador', 'cajas almacenamiento', 'estante'],
+    urgency: 'medium',
+    volume: 'very_high'
   },
-  'home decor': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone', 'fitness']
+  'limpiar casa': {
+    category: 'kitchen gadgets',
+    keywords: ['mopa', 'aspiradora', 'cepillo limpieza'],
+    urgency: 'medium',
+    volume: 'very_high'
   },
-  'kitchen gadgets': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'phone', 'toy', 'fitness']
+  'cuidar piel': {
+    category: 'beauty tools',
+    keywords: ['crema facial', 'serum', 'mascarilla'],
+    urgency: 'medium',
+    volume: 'very_high'
   },
-  'beauty tools': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'phone', 'kitchen']
+  'perder peso': {
+    category: 'fitness equipment',
+    keywords: ['bandas resistencia', 'pesas', 'ropa deportiva'],
+    urgency: 'high',
+    volume: 'very_high'
   },
-  'fashion accessories': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone', 'kitchen']
+  'cuidar mascotas': {
+    category: 'pet supplies',
+    keywords: ['juguete perro', 'cama mascota', 'correa'],
+    urgency: 'medium',
+    volume: 'high'
   },
-  'electronics gadgets': {
-    excluded: ['baby', 'pet', 'toy', 'home decor', 'kitchen', 'fashion', 'fitness']
+  'proteger celular': {
+    category: 'phone accessories',
+    keywords: ['funda celular', 'protector pantalla', 'soporte celular'],
+    urgency: 'medium',
+    volume: 'very_high'
   },
-  'fitness equipment': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'baby', 'pet', 'toy', 'phone', 'kitchen', 'beauty']
+  'mejorar sueño': {
+    category: 'home decor',
+    keywords: ['antifaz', 'almohada', 'difusor aromas'],
+    urgency: 'high',
+    volume: 'high'
   },
-  'jewelry women': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'phone', 'kitchen']
-  },
-  'phone accessories': {
-    excluded: ['baby', 'pet', 'toy', 'home', 'kitchen', 'fashion', 'fitness']
-  },
-  'shoes women': {
-    excluded: ['electronic', 'circuit', 'pcb', 'module', 'tool', 'baby', 'pet', 'toy', 'home', 'kitchen', 'phone']
+  'ahorrar energia': {
+    category: 'home decor',
+    keywords: ['bombillo led', 'temporizador', 'regleta'],
+    urgency: 'medium',
+    volume: 'medium'
   }
 };
 
-const FALLBACK_PRODUCTS = [
-  { keyword: 'audifonos bluetooth', price: 15.99, sales: 15000, rating: 4.7 },
-  { keyword: 'smartwatch deportivo', price: 25.50, sales: 12000, rating: 4.5 },
-  { keyword: 'crema facial coreana', price: 12.99, sales: 18000, rating: 4.8 },
-  { keyword: 'tenis deportivos mujer', price: 35.00, sales: 22000, rating: 4.6 },
-  { keyword: 'bolso cuero sintético', price: 28.99, sales: 9500, rating: 4.4 },
-  { keyword: 'lámpara LED escritorio', price: 18.50, sales: 7800, rating: 4.5 },
-  { keyword: 'set maquillaje profesional', price: 22.99, sales: 14000, rating: 4.7 },
-  { keyword: 'funda celular transparente', price: 5.99, sales: 45000, rating: 4.3 },
-  { keyword: 'organizador cocina', price: 16.50, sales: 8900, rating: 4.6 },
-  { keyword: 'collar personalizado', price: 14.99, sales: 11000, rating: 4.8 },
-  { keyword: 'kit fitness bandas', price: 19.99, sales: 13500, rating: 4.5 },
-  { keyword: 'vestido mujer casual', price: 24.99, sales: 16000, rating: 4.4 },
-];
+async function getGoogleTrendsProblems(country = 'CO') {
+  try {
+    const serpApiKey = process.env.SERPAPI_KEY;
+    
+    // ✅ Obtener tendencias en tiempo real de Google
+    const trendsResponse = await axios.get('https://serpapi.com/search.json', {
+      params: {
+        engine: 'google_trends_trending',
+        api_key: serpApiKey,
+        hl: 'es',
+        gl: country.toLowerCase()
+      }
+    });
 
-function formatTraffic(sales) {
-  if (!sales || sales < 100) return `${sales || 0} vendidos`;
-  if (sales >= 10000) return `${(sales / 1000).toFixed(1)}K vendidos`;
-  if (sales >= 1000) return `${(sales / 1000).toFixed(1)}K vendidos`;
-  return `${sales} vendidos`;
-}
+    console.log('📊 Google Trends Response:', trendsResponse.data);
 
-function calculateTrendScore(sales, rating, index) {
-  const salesScore = Math.min(sales / 1000, 10);
-  const ratingScore = (rating || 4.5) * 2;
-  const positionScore = Math.max(0, 10 - index);
-  return Math.min(99, Math.round((salesScore + ratingScore + positionScore) * 3.3));
-}
+    const problems = [];
 
-function convertPercentageToRating(percentage) {
-  if (!percentage) return 4.5;
-  if (percentage > 5) return (percentage / 100) * 5;
-  return percentage;
-}
+    // Analizar tendencias actuales
+    if (trendsResponse.data?.default?.trendingSearchesDays) {
+      for (const day of trendsResponse.data.default.trendingSearchesDays.slice(0, 3)) {
+        if (day.trendingSearches) {
+          for (const trend of day.trendingSearches.slice(0, 5)) {
+            const title = trend.title?.query?.toLowerCase() || '';
+            
+            // Verificar si es un problema/búsqueda de solución
+            const isProblem = PROBLEM_KEYWORDS.some(keyword => 
+              title.includes(keyword)
+            );
 
-function isProductRelevant(productTitle, category) {
-  const title = productTitle.toLowerCase();
-  if (!CATEGORY_KEYWORDS_FILTER[category]) return true;
-  const filters = CATEGORY_KEYWORDS_FILTER[category];
-  if (filters.excluded) {
-    for (const excludedWord of filters.excluded) {
-      if (title.includes(excludedWord.toLowerCase())) {
-        console.log(`❌ Excluido por "${excludedWord}": ${title.substring(0, 50)}`);
-        return false;
+            if (isProblem || trend.formattedTraffic > 50000) {
+              problems.push({
+                title: trend.title?.query || 'Unknown',
+                traffic: trend.formattedTraffic || '0',
+                trafficValue: parseInt(trend.formattedTraffic?.replace(/[^0-9]/g, '') || '0'),
+                relatedQueries: trend.entityNames?.map(e => e.name) || [],
+                date: day.date,
+                isProblem: isProblem
+              });
+            }
+          }
+        }
       }
     }
+
+    // ✅ Búsquedas relacionadas con problemas específicos
+    const searchPromises = PROBLEM_KEYWORDS.slice(0, 5).map(async (keyword) => {
+      try {
+        const response = await axios.get('https://serpapi.com/search.json', {
+          params: {
+            engine: 'google_trends',
+            q: keyword,
+            api_key: serpApiKey,
+            hl: 'es',
+            gl: country.toLowerCase(),
+            date: 'now 7-d'
+          }
+        });
+
+        if (response.data?.interest_over_time?.timelineData) {
+          const latest = response.data.interest_over_time.timelineData.slice(-1)[0];
+          return {
+            keyword,
+            interest: latest.value?.[0] || 0,
+            trending: latest.formattedValue?.[0] || '0'
+          };
+        }
+      } catch(e) {
+        console.log(`Error buscando ${keyword}:`, e.message);
+      }
+      return null;
+    });
+
+    const keywordResults = await Promise.all(searchPromises);
+    const validKeywords = keywordResults.filter(r => r !== null);
+
+    return {
+      trending: problems,
+      problemKeywords: validKeywords,
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.log('❌ Error Google Trends:', error.message);
+    return {
+      trending: [],
+      problemKeywords: [],
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
   }
-  return true;
 }
 
-app.post('/api/trenddropi/generate', async (req, res) => {
+// ============================================
+// MAPEO DE PROBLEMAS A PRODUCTOS ALIEXPRESS
+// ============================================
+
+async function findProductsForProblem(problemData, appKey, appSecret) {
+  const problem = problemData.title.toLowerCase();
+  
+  // Buscar en el mapeo
+  let productInfo = null;
+  for (const [key, value] of Object.entries(PROBLEM_TO_PRODUCT)) {
+    if (problem.includes(key)) {
+      productInfo = value;
+      break;
+    }
+  }
+
+  // Si no hay match exacto, usar categoría genérica
+  if (!productInfo) {
+    productInfo = {
+      category: 'home decor',
+      keywords: [problem.split(' ').slice(0, 2).join(' ')],
+      urgency: 'medium',
+      volume: 'medium'
+    };
+  }
+
+  console.log(`🎯 Problema detectado: ${problem}`);
+  console.log(`📦 Categoría sugerida: ${productInfo.category}`);
+  console.log(`🔑 Keywords: ${productInfo.keywords.join(', ')}`);
+
+  // Buscar productos en AliExpress
+  const products = [];
+  
+  for (const keyword of productInfo.keywords.slice(0, 2)) {
+    try {
+      const data = await aliRequest(
+        'aliexpress.affiliate.hotproduct.query',
+        {
+          country: 'CO',
+          fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,lastest_volume,latest_volume,30day_orders,app_sale_price,target_sale_price',
+          keywords: keyword,
+          page_no: '1',
+          page_size: '6',
+          sort: 'LAST_VOLUME_DESC',
+          target_currency: 'USD',
+          target_language: 'ES',
+          tracking_id: 'default'
+        },
+        appKey,
+        appSecret
+      );
+
+      let items = [];
+      if (data?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
+        items = data.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
+      }
+
+      products.push(...items.slice(0, 3));
+    } catch(e) {
+      console.log(`Error buscando ${keyword}:`, e.message);
+    }
+  }
+
+  return {
+    problem: problemData,
+    productInfo,
+    products: products.slice(0, 6)
+  };
+}
+
+// ============================================
+// ENDPOINTS
+// ============================================
+
+// ✅ ENDPOINT: Obtener problemas en tiempo real
+app.get('/api/problems/trending', async (req, res) => {
+  try {
+    const country = req.query.country || 'CO';
+    console.log(`🔍 Buscando problemas en tiempo real para: ${country}`);
+    
+    const trendsData = await getGoogleTrendsProblems(country);
+    
+    res.json({
+      success: true,
+      data: trendsData,
+      totalProblems: trendsData.trending.length + trendsData.problemKeywords.length
+    });
+  } catch (error) {
+    console.log('❌ Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ ENDPOINT: Problemas + Productos Solución
+app.post('/api/problems/solutions', async (req, res) => {
   try {
     const appKey = process.env.ALIEXPRESS_APP_KEY;
     const appSecret = process.env.ALIEXPRESS_APP_SECRET;
-    const { category } = req.body;
-    console.log('📂 Categoría:', category);
+    const country = req.body.country || 'CO';
+    
+    console.log('🔍 Buscando soluciones para problemas...');
 
-    let products = [];
-
-    if (appKey && appSecret) {
-      try {
-        let keyword;
-        if (category && category !== 'all') {
-          keyword = category;
-          console.log('🎯 Categoría específica:', keyword);
-        } else {
-          keyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-          console.log('🎲 Categoría aleatoria:', keyword);
+    // Obtener problemas de Google Trends
+    const trendsData = await getGoogleTrendsProblems(country);
+    
+    // Para cada problema, buscar productos
+    const solutions = [];
+    
+    for (const problem of trendsData.trending.slice(0, 5)) {
+      if (problem.isProblem || problem.trafficValue > 100000) {
+        const solution = await findProductsForProblem(problem, appKey, appSecret);
+        if (solution.products.length > 0) {
+          solutions.push(solution);
         }
-
-        console.log('🔑 Keyword:', keyword);
-
-        // ✅ PROBAR DOS ENDPOINTS para obtener más datos de ventas
-        let items = [];
-        let salesData = {};
-
-        // Intento 1: hotproduct.query
-        try {
-          const data1 = await aliRequest(
-            'aliexpress.affiliate.hotproduct.query',
-            {
-              country: 'CO',
-              fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,lastest_volume,latest_volume,30day_orders,app_sale_price,target_sale_price,commission_rate',
-              keywords: keyword,
-              page_no: '1',
-              page_size: '50',
-              sort: 'LAST_VOLUME_DESC',
-              target_currency: 'USD',
-              target_language: 'ES',
-              tracking_id: 'default'
-            },
-            appKey,
-            appSecret
-          );
-
-          if (data1?.aliexpress_affiliate_hotproduct_query_response?.resp_result?.result?.products?.product) {
-            items = data1.aliexpress_affiliate_hotproduct_query_response.resp_result.result.products.product;
-          }
-          console.log('📦 Hot products - Items brutos:', items.length);
-        } catch(e) {
-          console.log('❌ Error hotproduct:', e.message);
-        }
-
-        // Intento 2: product.query (puede tener más datos)
-        try {
-          const data2 = await aliRequest(
-            'aliexpress.affiliate.product.query',
-            {
-              country: 'CO',
-              fields: 'product_id,product_title,sale_price,product_main_image_url,product_detail_url,evaluate_rate,30days_num,all_num,commission_rate',
-              keywords: keyword,
-              page_no: '1',
-              page_size: '50',
-              sort: 'SALE_VOLUME_DESC',
-              target_currency: 'USD',
-              target_language: 'ES',
-              tracking_id: 'default'
-            },
-            appKey,
-            appSecret
-          );
-
-          console.log('📦 Product query response:', JSON.stringify(data2, null, 2).substring(0, 2000));
-
-          if (data2?.aliexpress_affiliate_product_query_response?.resp_result?.result?.products?.product) {
-            const items2 = data2.aliexpress_affiliate_product_query_response.resp_result.result.products.product;
-            console.log('📦 Product query - Items:', items2.length);
-            
-            // Si el segundo endpoint tiene más datos, usarlo
-            if (items2.length > 0) {
-              items = items2;
-              console.log('✅ Usando datos de product.query');
-            }
-          }
-        } catch(e) {
-          console.log('❌ Error product.query:', e.message);
-        }
-
-        console.log(' Total items para procesar:', items.length);
-
-        if (items.length > 0) {
-          const filteredItems = items.filter(item => isProductRelevant(item.product_title, keyword));
-          console.log('✅ Después de filtrar:', filteredItems.length);
-
-          // ✅ ORDENAR por ventas (usando cualquier campo disponible)
-          filteredItems.sort((a, b) => {
-            const salesA = parseInt(a['30days_num']) || parseInt(a.all_num) || parseInt(a.lastest_volume) || parseInt(a.latest_volume) || parseInt(a['30day_orders']) || 0;
-            const salesB = parseInt(b['30days_num']) || parseInt(b.all_num) || parseInt(b.lastest_volume) || parseInt(b.latest_volume) || parseInt(b['30day_orders']) || 0;
-            return salesB - salesA;
-          });
-
-          // Mostrar estructura del primer producto para debug
-          if (filteredItems.length > 0) {
-            console.log('🔍 Primer producto campos:', Object.keys(filteredItems[0]));
-            console.log('  30days_num:', filteredItems[0]['30days_num']);
-            console.log('  all_num:', filteredItems[0].all_num);
-            console.log('  lastest_volume:', filteredItems[0].lastest_volume);
-          }
-
-          products = filteredItems.slice(0, 12).map((item, index) => {
-            // ✅ USAR EL CAMPO CON MÁS VENTAS
-            const sales30days = parseInt(item['30days_num']) || 0;
-            const salesAll = parseInt(item.all_num) || 0;
-            const salesLastest = parseInt(item.lastest_volume) || 0;
-            const salesLatest = parseInt(item.latest_volume) || 0;
-            const sales30d = parseInt(item['30day_orders']) || 0;
-            
-            // Usar el mayor valor disponible
-            const sales = Math.max(sales30days, salesAll, salesLastest, salesLatest, sales30d, 0);
-            
-            const ratingRaw = parseFloat(item.evaluate_rate);
-            const rating = convertPercentageToRating(ratingRaw);
-            const price = parseFloat(item.target_sale_price || item.app_sale_price || item.sale_price) || (Math.random() * 50 + 10);
-            
-            return {
-              id: index + 1,
-              name: item.product_title?.substring(0, 70) || 'Producto AliExpress',
-              trend_score: calculateTrendScore(sales, rating, index),
-              traffic: formatTraffic(sales),
-              sales_30days: sales,
-              rating: rating.toFixed(1),
-              price: price.toFixed(2),
-              image: item.product_main_image_url || `https://via.placeholder.com/300x280?text=Producto+${index + 1}`,
-              source: 'AliExpress Hot Products',
-              category: keyword,
-              search_url: {
-                aliexpress: item.product_detail_url ||
-                  `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.product_title || '')}`
-              }
-            };
-          });
-          
-          console.log('✅ Productos finales:', products.length);
-        }
-
-      } catch(e) {
-        console.log('❌ Error general API:', e.message);
       }
     }
 
-    if (!products.length) {
-      console.log('🔄 Usando fallback');
-      const shuffled = [...FALLBACK_PRODUCTS].sort(() => Math.random() - 0.5).slice(0, 12);
-      products = shuffled.map((item, index) => ({
-        id: index + 1,
-        name: item.keyword,
-        trend_score: calculateTrendScore(item.sales, item.rating, index),
-        traffic: formatTraffic(item.sales),
-        sales_30days: item.sales,
-        rating: item.rating.toFixed(1),
-        price: item.price.toFixed(2),
-        source: 'Google Trends Colombia (fallback)',
-        category: category || 'general',
-        search_url: {
-          aliexpress: `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(item.keyword)}`
-        }
-      }));
+    // Si no hay problemas detectados, usar keywords de problemas populares
+    if (solutions.length === 0) {
+      const fallbackProblems = [
+        { title: 'dolor de espalda', traffic: '500K+', trafficValue: 500000 },
+        { title: 'organizar casa', traffic: '200K+', trafficValue: 200000 },
+        { title: 'cuidar piel', traffic: '300K+', trafficValue: 300000 }
+      ];
+
+      for (const problem of fallbackProblems) {
+        const solution = await findProductsForProblem(problem, appKey, appSecret);
+        solutions.push(solution);
+      }
     }
 
     res.json({
       success: true,
-      products,
-      total: products.length,
-      source: products[0]?.source,
-      category: products[0]?.category || 'fallback'
+      problems: solutions,
+      total: solutions.length,
+      country,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.log('💥 Error general:', error.message);
-    res.status(500).json({ error: 'Error interno', detail: error.message });
+    console.log('❌ Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ ENDPOINT: Análisis completo de un problema específico
+app.post('/api/problems/analyze', async (req, res) => {
+  try {
+    const { problem } = req.body;
+    const appKey = process.env.ALIEXPRESS_APP_KEY;
+    const appSecret = process.env.ALIEXPRESS_APP_SECRET;
+    
+    console.log(`🔍 Analizando problema: ${problem}`);
+
+    // 1. Obtener volumen de búsqueda en Google
+    const serpApiKey = process.env.SERPAPI_KEY;
+    let searchVolume = 0;
+    let trend = 'stable';
+    
+    try {
+      const trendsResponse = await axios.get('https://serpapi.com/search.json', {
+        params: {
+          engine: 'google_trends',
+          q: problem,
+          api_key: serpApiKey,
+          hl: 'es',
+          gl: 'co',
+          date: 'now 12-m'
+        }
+      });
+
+      if (trendsResponse.data?.interest_over_time?.timelineData) {
+        const data = trendsResponse.data.interest_over_time.timelineData;
+        const latest = data.slice(-1)[0].value?.[0] || 0;
+        const previous = data.slice(-2, -1)[0]?.value?.[0] || 0;
+        
+        searchVolume = latest;
+        trend = latest > previous ? 'rising' : latest < previous ? 'declining' : 'stable';
+      }
+    } catch(e) {
+      console.log('Error getting trends:', e.message);
+    }
+
+    // 2. Buscar productos solución
+    const solution = await findProductsForProblem(
+      { title: problem, traffic: `${searchVolume}+`, trafficValue: searchVolume },
+      appKey,
+      appSecret
+    );
+
+    // 3. Calcular métricas
+    const avgPrice = solution.products.reduce((sum, p) => 
+      sum + parseFloat(p.target_sale_price || p.app_sale_price || p.sale_price || 0), 0
+    ) / solution.products.length;
+
+    const avgRating = solution.products.reduce((sum, p) => 
+      sum + parseFloat(p.evaluate_rate || 0), 0
+    ) / solution.products.length / 100 * 5;
+
+    // 4. Score de oportunidad
+    const opportunityScore = Math.min(100, Math.round(
+      (searchVolume / 1000) * 0.4 +
+      (solution.products.length > 0 ? 30 : 0) +
+      (trend === 'rising' ? 20 : trend === 'stable' ? 10 : 0) +
+      (avgRating >= 4 ? 10 : 0)
+    ));
+
+    res.json({
+      success: true,
+      problem,
+      metrics: {
+        searchVolume,
+        trend,
+        competition: solution.products.length,
+        avgPrice: avgPrice.toFixed(2),
+        avgRating: avgRating.toFixed(1),
+        opportunityScore
+      },
+      products: solution.products.slice(0, 6).map(item => ({
+        title: item.product_title,
+        price: parseFloat(item.target_sale_price || item.app_sale_price || item.sale_price || 0).toFixed(2),
+        rating: (parseFloat(item.evaluate_rate || 0) / 100 * 5).toFixed(1),
+        sales: parseInt(item.lastest_volume || item.latest_volume || item['30day_orders'] || 0),
+        image: item.product_main_image_url,
+        url: item.product_detail_url
+      })),
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.log('❌ Error:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
