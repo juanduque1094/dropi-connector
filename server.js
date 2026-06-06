@@ -7,7 +7,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 // ============================================
-// GOOGLE TRENDS - 100% DATOS REALES
+// GOOGLE TRENDS - URL DIRECTA (FUNCIONA)
 // ============================================
 
 async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
@@ -15,7 +15,7 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
     const serpApiKey = process.env.SERPAPI_KEY;
     
     if (!serpApiKey) {
-      throw new Error('SERPAPI_KEY no configurada en Render');
+      throw new Error('SERPAPI_KEY no configurada');
     }
 
     console.log(`🔍 Buscando tendencias REALES - País: ${country}, Período: ${timeframe}`);
@@ -29,7 +29,7 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
       risingSearches: []
     };
 
-    // ✅ MÉTODO 1: Búsquedas con palabras de problema
+    // ✅ MÉTODO 1: Búsquedas con palabras de problema - URL DIRECTA
     const problemKeywords = [
       'como solucionar',
       'como eliminar',
@@ -43,40 +43,37 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
 
     for (const keyword of problemKeywords) {
       try {
-        const response = await axios.get('https://serpapi.com/search.json', {
-          params: {
-            engine: 'google_trends',
-            q: keyword,
-            api_key: serpApiKey,
-            hl: 'es',
-            gl: country.toLowerCase(),
-            date: timeframe
-          },
+        // ✅ URL DIRECTA (igual que en el navegador)
+        const url = `https://serpapi.com/search.json?engine=google_trends&q=${encodeURIComponent(keyword)}&api_key=${serpApiKey}&hl=es&gl=${country.toLowerCase()}&date=${encodeURIComponent(timeframe)}`;
+        
+        console.log(`🔍 Request: ${url.substring(0, 100)}...`);
+        
+        const response = await axios.get(url, {
           timeout: 15000
         });
 
-        // ✅ Extraer interés REAL - Corregido scope
-        if (response.data?.interest_over_time?.timelineData) {
-          const timelineData = response.data.interest_over_time.timelineData;
+        // Extraer interés REAL
+        if (response.data?.interest_over_time?.timeline_data) {
+          const timelineData = response.data.interest_over_time.timeline_data;
           
           if (timelineData.length > 0) {
             const latestData = timelineData[timelineData.length - 1];
-            const interest = latestData?.value?.[0] || 0;
+            const interest = latestData?.values?.[0]?.value || 0;
             
             if (interest > 0) {
               results.trendingSearches.push({
                 keyword: keyword,
                 interest: interest,
-                formattedInterest: latestData?.formattedValue?.[0] || String(interest),
+                formattedInterest: String(interest),
                 timeframe: timeframe,
-                date: latestData?.formattedAxisTime || new Date().toISOString()
+                date: latestData?.date || new Date().toISOString()
               });
               console.log(`✅ "${keyword}": Interés REAL ${interest}`);
             }
           }
         }
 
-        // ✅ Extraer consultas en aumento REALES
+        // Extraer consultas en aumento REALES
         if (response.data?.related_queries?.rising) {
           for (const item of response.data.related_queries.rising.slice(0, 5)) {
             if (item.query && item.value) {
@@ -90,7 +87,7 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
           }
         }
 
-        // ✅ Extraer consultas relacionadas REALES
+        // Extraer consultas relacionadas REALES
         if (response.data?.related_queries?.top) {
           for (const item of response.data.related_queries.top.slice(0, 5)) {
             if (item.query && item.extracted_value) {
@@ -108,19 +105,13 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
       }
     }
 
-    // ✅ MÉTODO 2: Tendencias generales
+    // ✅ MÉTODO 2: Tendencias generales - URL DIRECTA
     try {
       console.log(' Buscando tendencias generales...');
       
-      const generalResponse = await axios.get('https://serpapi.com/search.json', {
-        params: {
-          engine: 'google_trends',
-          q: 'tendencias',
-          api_key: serpApiKey,
-          hl: 'es',
-          gl: country.toLowerCase(),
-          date: timeframe
-        },
+      const url = `https://serpapi.com/search.json?engine=google_trends&q=${encodeURIComponent('tendencias')}&api_key=${serpApiKey}&hl=es&gl=${country.toLowerCase()}&date=${encodeURIComponent(timeframe)}`;
+      
+      const generalResponse = await axios.get(url, {
         timeout: 15000
       });
 
@@ -138,10 +129,10 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
         }
       }
     } catch (e) {
-      console.log('⚠️ Error en tendencias generales:', e.message);
+      console.log('️ Error en tendencias generales:', e.message);
     }
 
-    // ✅ MÉTODO 3: People also ask
+    // ✅ MÉTODO 3: People also ask - URL DIRECTA
     const commonSearches = [
       'problemas comunes',
       'como solucionar problemas',
@@ -152,15 +143,9 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
 
     for (const search of commonSearches) {
       try {
-        const askResponse = await axios.get('https://serpapi.com/search.json', {
-          params: {
-            engine: 'google',
-            q: search,
-            api_key: serpApiKey,
-            hl: 'es',
-            gl: country.toLowerCase(),
-            num: 5
-          },
+        const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(search)}&api_key=${serpApiKey}&hl=es&gl=${country.toLowerCase()}&num=5`;
+        
+        const askResponse = await axios.get(url, {
           timeout: 15000
         });
 
@@ -213,7 +198,6 @@ async function getRealGoogleTrends(country = 'CO', timeframe = 'now 7-d') {
   }
 }
 
-// ✅ EXTRAER PROBLEMA DE PREGUNTA
 function extractProblemFromQuestion(question) {
   const patterns = [
     /(?:cómo|como)\s+(?:eliminar|quitar|solucionar|arreglar|resolver)\s+(.+)/i,
@@ -237,7 +221,6 @@ function extractProblemFromQuestion(question) {
 // ENDPOINTS
 // ============================================
 
-// ✅ ENDPOINT: Obtener problemas reales
 app.get('/api/problems/real', async (req, res) => {
   try {
     const country = req.query.country || 'CO';
@@ -247,11 +230,10 @@ app.get('/api/problems/real', async (req, res) => {
     if (period === '15d') timeframe = 'now 15-d';
     if (period === '30d') timeframe = 'now 1-m';
 
-    console.log(`\n SOLICITUD: Período ${period} (${timeframe}) - País: ${country}`);
+    console.log(`\n📊 SOLICITUD: Período ${period} (${timeframe}) - País: ${country}`);
 
     const trendsData = await getRealGoogleTrends(country, timeframe);
 
-    // ✅ Si no hay datos, responder con error pero NO caer
     if (trendsData.trendingSearches.length === 0 && trendsData.risingSearches.length === 0) {
       return res.status(404).json({
         success: false,
@@ -281,7 +263,7 @@ app.get('/api/problems/real', async (req, res) => {
     });
 
   } catch (error) {
-    console.log(' Error:', error.message);
+    console.log('❌ Error:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -290,7 +272,6 @@ app.get('/api/problems/real', async (req, res) => {
   }
 });
 
-// ✅ ENDPOINT: Comparar períodos
 app.get('/api/problems/compare', async (req, res) => {
   try {
     const country = req.query.country || 'CO';
@@ -317,7 +298,7 @@ app.get('/api/problems/compare', async (req, res) => {
     });
 
   } catch (error) {
-    console.log(' Error en comparación:', error.message);
+    console.log('❌ Error en comparación:', error.message);
     res.status(500).json({
       success: false,
       error: error.message
@@ -325,7 +306,6 @@ app.get('/api/problems/compare', async (req, res) => {
   }
 });
 
-// ✅ ENDPOINT: Análisis detallado
 app.get('/api/problems/analyze/:keyword', async (req, res) => {
   try {
     const { keyword } = req.params;
@@ -338,15 +318,9 @@ app.get('/api/problems/analyze/:keyword', async (req, res) => {
       throw new Error('SERPAPI_KEY no configurada');
     }
 
-    const trendsResponse = await axios.get('https://serpapi.com/search.json', {
-      params: {
-        engine: 'google_trends',
-        q: keyword,
-        api_key: serpApiKey,
-        hl: 'es',
-        gl: country.toLowerCase(),
-        date: 'now 12-m'
-      },
+    const url = `https://serpapi.com/search.json?engine=google_trends&q=${encodeURIComponent(keyword)}&api_key=${serpApiKey}&hl=es&gl=${country.toLowerCase()}&date=now%2012-m`;
+
+    const trendsResponse = await axios.get(url, {
       timeout: 15000
     });
 
@@ -354,10 +328,10 @@ app.get('/api/problems/analyze/:keyword', async (req, res) => {
       keyword,
       country,
       timestamp: new Date().toISOString(),
-      interestOverTime: trendsResponse.data?.interest_over_time?.timelineData || [],
+      interestOverTime: trendsResponse.data?.interest_over_time?.timeline_data || [],
       relatedQueries: trendsResponse.data?.related_queries || {},
       relatedTopics: trendsResponse.data?.related_topics || {},
-      trend: calculateTrend(trendsResponse.data?.interest_over_time?.timelineData)
+      trend: calculateTrend(trendsResponse.data?.interest_over_time?.timeline_data)
     };
 
     res.json({
@@ -374,7 +348,6 @@ app.get('/api/problems/analyze/:keyword', async (req, res) => {
   }
 });
 
-// ✅ CALCULAR TENDENCIA
 function calculateTrend(timelineData) {
   if (!timelineData || timelineData.length < 2) {
     return 'stable';
@@ -383,29 +356,25 @@ function calculateTrend(timelineData) {
   const recent = timelineData.slice(-3);
   const older = timelineData.slice(-6, -3);
 
-  const recentAvg = recent.reduce((sum, item) => sum + (item.value?.[0] || 0), 0) / recent.length;
-  const olderAvg = older.reduce((sum, item) => sum + (item.value?.[0] || 0), 0) / older.length;
+  const recentAvg = recent.reduce((sum, item) => sum + (item.values?.[0]?.value || 0), 0) / recent.length;
+  const olderAvg = older.reduce((sum, item) => sum + (item.values?.[0]?.value || 0), 0) / older.length;
 
   if (recentAvg > olderAvg * 1.2) return 'rising';
   if (recentAvg < olderAvg * 0.8) return 'declining';
   return 'stable';
 }
 
-// ✅ Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'Google Trends Problem Detector',
-    version: '2.0.0'
+    version: '3.0.0'
   });
 });
 
-// ============================================
-// INICIAR SERVIDOR
-// ============================================
 app.listen(PORT, () => {
   console.log(`\n🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`📊 Solo Google Trends - 100% Datos Reales`);
-  console.log(` Sin AliExpress - Sin Fallback\n`);
+  console.log(` Solo Google Trends - 100% Datos Reales`);
+  console.log(`✅ Sin AliExpress - Sin Fallback - URL Directa\n`);
 });
