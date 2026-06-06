@@ -1,11 +1,17 @@
 {
   "name": "dropi-connector",
   "version": "1.0.0",
+  "description": "Dropshipping connector",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "google-trends-api": "^4.9.2"
+    "axios": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }
